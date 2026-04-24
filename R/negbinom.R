@@ -236,9 +236,9 @@ cn_test_nb <- function(chrom_depth_per_cell) {
 
   chrom_depth_per_cell$neg_log10_p <- -log10(chrom_depth_per_cell$p_value)
   chrom_depth_per_cell$p_value_adj <- stats::p.adjust(chrom_depth_per_cell$p_value, method = "BH")
-  chrom_depth_per_cell$called_cna <- ifelse(chrom_depth_per_cell$p_value_adj < 0.05, "YES", "NO")
+  chrom_depth_per_cell$called_cna <- ifelse(chrom_depth_per_cell$p_value_adj < 0.01, "YES", "NO")
   chrom_depth_per_cell$cn_state_binom <- ifelse(
-    chrom_depth_per_cell$p_value_adj < 0.05,
+    chrom_depth_per_cell$p_value_adj < 0.01,
     chrom_depth_per_cell$gamma_ci * 2,
     NA_real_
   )
