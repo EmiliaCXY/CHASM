@@ -43,7 +43,7 @@ estimate_param <- function(read_depth, positions) {
   message("Step4: Examining expected and observed depth")
   chrom_depth_per_cell$expected_depth <-
     chrom_depth_per_cell$lib_size * chrom_depth_per_cell$beta_i_hat
-  chrom_depth_per_cell$diff_normed2 <-
+  chrom_depth_per_cell$standardized_residual <-
     (chrom_depth_per_cell$read_depth - chrom_depth_per_cell$expected_depth) /
     sqrt(chrom_depth_per_cell$expected_depth)
 
@@ -60,57 +60,57 @@ estimate_variance_dispersion <- function(
   message("Step5: Grouping cells into bins by expected depth")
 
   max_expected_depth <- max(chrom_depth_per_cell$expected_depth)
-  read_depth_bin_size <- coverage_bin_size * max_expected_depth
-  chrom_depth_per_cell$depth_bin <- round(chrom_depth_per_cell$expected_depth / read_depth_bin_size, 0)
+  expected_depth_bin_width <- coverage_bin_size * max_expected_depth
+  chrom_depth_per_cell$depth_bin <- round(chrom_depth_per_cell$expected_depth / expected_depth_bin_width, 0)
 
   num_bins <- length(unique(chrom_depth_per_cell$depth_bin))
   if (num_bins < min_bins) {
-    read_depth_bin_size <- max_expected_depth / min_bins
-    chrom_depth_per_cell$depth_bin <- round(chrom_depth_per_cell$expected_depth / read_depth_bin_size, 0)
+    expected_depth_bin_width <- max_expected_depth / min_bins
+    chrom_depth_per_cell$depth_bin <- round(chrom_depth_per_cell$expected_depth / expected_depth_bin_width, 0)
   }
 
-  sum_bin <- chrom_depth_per_cell %>%
+  depth_bin_counts <- chrom_depth_per_cell %>%
     dplyr::group_by(depth_bin) %>%
     dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
     dplyr::arrange(depth_bin)
 
   message("Step6: Merging neighbor bins if the number of cells in bin is < 200")
-  new_bin_df <- data.frame(matrix(ncol = 2, nrow = 0))
-  colnames(new_bin_df) <- c("depth_bin", "depth_bin_new")
-  num_row <- nrow(sum_bin)
-  cur_row <- 1
+  depth_bin_map <- data.frame(matrix(ncol = 2, nrow = 0))
+  colnames(depth_bin_map) <- c("depth_bin", "depth_bin_new")
+  n_rows <- nrow(depth_bin_counts)
+  row_idx <- 1
 
-  while (cur_row < num_row) {
-    if (sum_bin[cur_row, 2] > 200) {
-      new_bin_df[nrow(new_bin_df) + 1, ] <- c(sum_bin[cur_row, ]$depth_bin[1], sum_bin[cur_row, ]$depth_bin[1])
-      cur_row <- cur_row + 1
+  while (row_idx < n_rows) {
+    if (depth_bin_counts[row_idx, 2] > 200) {
+      depth_bin_map[nrow(depth_bin_map) + 1, ] <- c(depth_bin_counts[row_idx, ]$depth_bin[1], depth_bin_counts[row_idx, ]$depth_bin[1])
+      row_idx <- row_idx + 1
     } else {
-      for (next_row in cur_row:nrow(sum_bin)) {
-        if (sum(sum_bin[cur_row:next_row, ]$n) > 200) {
-          new_inserts <- as.data.frame(cbind(
-            sum_bin[cur_row:next_row, ]$depth_bin,
-            rep(sum_bin[cur_row, ]$depth_bin[1], next_row - cur_row + 1)
+      for (next_idx in row_idx:nrow(depth_bin_counts)) {
+        if (sum(depth_bin_counts[row_idx:next_idx, ]$n) > 200) {
+          merged_rows <- as.data.frame(cbind(
+            depth_bin_counts[row_idx:next_idx, ]$depth_bin,
+            rep(depth_bin_counts[row_idx, ]$depth_bin[1], next_idx - row_idx + 1)
           ))
-          colnames(new_inserts) <- c("depth_bin", "depth_bin_new")
-          new_bin_df <- rbind(new_bin_df, new_inserts)
-          cur_row <- next_row + 1
+          colnames(merged_rows) <- c("depth_bin", "depth_bin_new")
+          depth_bin_map <- rbind(depth_bin_map, merged_rows)
+          row_idx <- next_idx + 1
           break
         }
-        if (next_row == nrow(sum_bin)) {
-          new_inserts <- as.data.frame(cbind(
-            sum_bin[cur_row:next_row, ]$depth_bin,
-            rep(sum_bin[cur_row, ]$depth_bin[1], next_row - cur_row + 1)
+        if (next_idx == nrow(depth_bin_counts)) {
+          merged_rows <- as.data.frame(cbind(
+            depth_bin_counts[row_idx:next_idx, ]$depth_bin,
+            rep(depth_bin_counts[row_idx, ]$depth_bin[1], next_idx - row_idx + 1)
           ))
-          colnames(new_inserts) <- c("depth_bin", "depth_bin_new")
-          new_bin_df <- rbind(new_bin_df, new_inserts)
-          cur_row <- next_row + 1
+          colnames(merged_rows) <- c("depth_bin", "depth_bin_new")
+          depth_bin_map <- rbind(depth_bin_map, merged_rows)
+          row_idx <- next_idx + 1
           break
         }
       }
     }
   }
 
-  chrom_depth_per_cell <- merge(chrom_depth_per_cell, new_bin_df, by = "depth_bin")
+  chrom_depth_per_cell <- merge(chrom_depth_per_cell, depth_bin_map, by = "depth_bin")
 
   mean_variance_df <- chrom_depth_per_cell %>%
     dplyr::group_by(depth_bin_new) %>%
@@ -126,24 +126,24 @@ estimate_variance_dispersion <- function(
   mean_variance_df$phi_raw <- (mean_variance_df$var - mean_variance_df$mean) / (mean_variance_df$mean^2)
   mean_variance_df$phi_raw <- 1 / mean_variance_df$phi_raw
 
-  valid_idx <- is.finite(mean_variance_df$phi_raw) &
+  valid_rows <- is.finite(mean_variance_df$phi_raw) &
     mean_variance_df$phi_raw > 0 &
     is.finite(mean_variance_df$mean) &
     mean_variance_df$mean > 0
-  if (sum(valid_idx) >= 5) {
+  if (sum(valid_rows) >= 5) {
     loess_fit <- stats::loess(
       log(phi_raw) ~ log(mean),
-      data = mean_variance_df[valid_idx, ],
+      data = mean_variance_df[valid_rows, ],
       span = 0.75,
       degree = 1
     )
     phi_trend <- exp(stats::predict(loess_fit, newdata = mean_variance_df))
   } else {
-    phi_trend <- rep(stats::median(mean_variance_df$phi_raw[valid_idx], na.rm = TRUE), nrow(mean_variance_df))
+    phi_trend <- rep(stats::median(mean_variance_df$phi_raw[valid_rows], na.rm = TRUE), nrow(mean_variance_df))
   }
 
-  w <- mean_variance_df$n / (mean_variance_df$n + prior_n)
-  mean_variance_df$phi <- exp((1 - w) * log(phi_trend) + w * log(mean_variance_df$phi_raw))
+  shrinkage_weight <- mean_variance_df$n / (mean_variance_df$n + prior_n)
+  mean_variance_df$phi <- exp((1 - shrinkage_weight) * log(phi_trend) + shrinkage_weight * log(mean_variance_df$phi_raw))
 
   chrom_depth_per_cell <- merge(chrom_depth_per_cell, mean_variance_df, by = "depth_bin_new", all.x = TRUE)
 
@@ -153,35 +153,35 @@ estimate_variance_dispersion <- function(
 cn_test_nb <- function(chrom_depth_per_cell) {
   message("Step8: Performing Negative Binomial test")
 
-  chrom_depth_per_cell$p_val <- stats::pnbinom(
+  chrom_depth_per_cell$p_value <- stats::pnbinom(
     q = chrom_depth_per_cell$read_depth,
     mu = chrom_depth_per_cell$lib_size * chrom_depth_per_cell$beta_i_hat,
     size = chrom_depth_per_cell$phi
   )
 
-  chrom_depth_per_cell$p_val <- ifelse(
+  chrom_depth_per_cell$p_value <- ifelse(
     chrom_depth_per_cell$read_depth > chrom_depth_per_cell$lib_size * chrom_depth_per_cell$beta_i_hat,
-    1 - chrom_depth_per_cell$p_val,
-    chrom_depth_per_cell$p_val
+    1 - chrom_depth_per_cell$p_value,
+    chrom_depth_per_cell$p_value
   )
 
-  chrom_depth_per_cell$neg_log10_p <- -log10(chrom_depth_per_cell$p_val)
-  chrom_depth_per_cell$p_val_adjust <- stats::p.adjust(chrom_depth_per_cell$p_val, method = "BH")
-  chrom_depth_per_cell$calledCNA <- ifelse(chrom_depth_per_cell$p_val_adjust < 0.05, "YES", "NO")
-  chrom_depth_per_cell$CN_state.binom <- ifelse(
-    chrom_depth_per_cell$p_val_adjust < 0.05,
+  chrom_depth_per_cell$neg_log10_p <- -log10(chrom_depth_per_cell$p_value)
+  chrom_depth_per_cell$p_value_adj <- stats::p.adjust(chrom_depth_per_cell$p_value, method = "BH")
+  chrom_depth_per_cell$called_cna <- ifelse(chrom_depth_per_cell$p_value_adj < 0.05, "YES", "NO")
+  chrom_depth_per_cell$cn_state_binom <- ifelse(
+    chrom_depth_per_cell$p_value_adj < 0.05,
     chrom_depth_per_cell$gamma_ci * 2,
     NA_real_
   )
 
   chrom_depth_per_cell %>%
-    dplyr::select(ID, chrom, p_val_adjust, calledCNA, CN_state.binom)
+    dplyr::select(ID, chrom, p_value_adj, called_cna, cn_state_binom)
 }
 
 assign_cn_state.chrom <- function(read_depth, positions) {
   chrom_depth_per_cell <- estimate_param(read_depth, positions)
   chrom_depth_per_cell <- estimate_variance_dispersion(chrom_depth_per_cell, coverage_bin_size = 0.01)
-  cn_state_df <- cn_test_nb(chrom_depth_per_cell)
+  cn_calls <- cn_test_nb(chrom_depth_per_cell)
 
-  cn_state_df
+  cn_calls
 }

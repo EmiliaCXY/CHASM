@@ -1,30 +1,54 @@
-recenter_svd_normalized_depth <- function(svd.normalized.read.depth, chrom_depth_per_cell) {
+#' Recenter normalized depth by the expected bin-specific signal
+#'
+#' Aligns the SVD-normalized depth matrix with the bins present in the
+#' normalized long-format depth table and adds back the per-bin expected signal
+#' estimate (`beta_i_hat`).
+#'
+#' @param svd_normalized_depth Numeric matrix of normalized depth values with
+#'   cells in rows and bins in columns.
+#' @param chrom_depth_per_cell Long-format data frame containing `barcode`,
+#'   `bin`, and `beta_i_hat` columns.
+#'
+#' @return A recentered depth matrix with the same dimensions as the aligned
+#'   input matrix.
+recenter_svd_normalized_depth <- function(svd_normalized_depth, chrom_depth_per_cell) {
   if (!all(c("barcode", "bin", "beta_i_hat") %in% colnames(chrom_depth_per_cell))) {
     stop("recenter_svd_normalized_depth: chrom_depth_per_cell must contain 'barcode', 'bin', 'beta_i_hat'.")
   }
 
-  chrom_depth_per_cell.beta_hat <- tidyr::pivot_wider(
+  beta_hat_matrix <- tidyr::pivot_wider(
     chrom_depth_per_cell[, c("barcode", "bin", "beta_i_hat")],
     names_from = "bin",
     values_from = "beta_i_hat"
   )
-  rownames(chrom_depth_per_cell.beta_hat) <- chrom_depth_per_cell.beta_hat$barcode
-  chrom_depth_per_cell.beta_hat <- as.matrix(chrom_depth_per_cell.beta_hat[, -1, drop = FALSE])
+  rownames(beta_hat_matrix) <- beta_hat_matrix$barcode
+  beta_hat_matrix <- as.matrix(beta_hat_matrix[, -1, drop = FALSE])
 
-  bins <- data.frame(bin = colnames(svd.normalized.read.depth), stringsAsFactors = FALSE)
-  colnames(svd.normalized.read.depth) <- bins$bin
-  bins <- bins[bins$bin %in% chrom_depth_per_cell$bin, , drop = FALSE]
-  bins_vec <- bins$bin
+  bin_info <- data.frame(bin = colnames(svd_normalized_depth), stringsAsFactors = FALSE)
+  colnames(svd_normalized_depth) <- bin_info$bin
+  bin_info <- bin_info[bin_info$bin %in% chrom_depth_per_cell$bin, , drop = FALSE]
+  bin_names <- bin_info$bin
 
-  svd.normalized.read.depth <- svd.normalized.read.depth[, bins_vec, drop = FALSE]
-  chrom_depth_per_cell.beta_hat <- chrom_depth_per_cell.beta_hat[, bins_vec, drop = FALSE]
+  svd_normalized_depth <- svd_normalized_depth[, bin_names, drop = FALSE]
+  beta_hat_matrix <- beta_hat_matrix[, bin_names, drop = FALSE]
 
-  svd.normalized.read.depth + chrom_depth_per_cell.beta_hat
+  svd_normalized_depth + beta_hat_matrix
 }
 
-construct_segment_to_bin_dictionary <- function(output, bins) {
+#' Map segmentation intervals back to overlapping genomic bins
+#'
+#' Builds genomic ranges for segment calls and bin coordinates, finds their
+#' overlaps, and returns a table linking each segment to the bins it spans.
+#'
+#' @param segment_table Data frame of segmentation calls containing `chrom`,
+#'   `loc.start`, `loc.end`, and `ID` columns.
+#' @param bins Character vector of genomic bin labels.
+#'
+#' @return A data frame mapping each segment call to overlapping bins, including
+#'   a derived segment identifier (`segment_id`).
+construct_segment_to_bin_dictionary <- function(segment_table, bins) {
   required_cols <- c("chrom", "loc.start", "loc.end", "ID")
-  missing_cols <- setdiff(required_cols, colnames(output))
+  missing_cols <- setdiff(required_cols, colnames(segment_table))
   if (length(missing_cols) > 0) {
     stop(
       "construct_segment_to_bin_dictionary: output missing required columns: ",
@@ -32,188 +56,127 @@ construct_segment_to_bin_dictionary <- function(output, bins) {
     )
   }
 
-  output_df <- output[, c("chrom", "loc.start", "loc.end")] %>% dplyr::distinct()
-  colnames(output_df) <- c("chrom", "start", "end")
-  output_gr <- GenomicRanges::makeGRangesFromDataFrame(output_df)
-  output_df$queryHits <- rownames(output_df)
-  colnames(output_df) <- c("chrom", "start_output", "end_output", "queryHits")
+  segment_ranges <- segment_table[, c("chrom", "loc.start", "loc.end")] %>% dplyr::distinct()
+  colnames(segment_ranges) <- c("chrom", "start_output", "end_output")
+  segment_granges <- GenomicRanges::makeGRangesFromDataFrame(
+    segment_ranges,
+    keep.extra.columns = TRUE
+  )
 
-  bin_df <- as.data.frame(bins)
-  colnames(bin_df) <- c("chrom_bin")
+  bin_ranges <- as.data.frame(bins)
+  colnames(bin_ranges) <- c("chrom_bin")
 
-  bin_df[, c("chrom", "start", "end", "arm")] <- stringr::str_split_fixed(bin_df$chrom_bin, "-|_", 4)
-  bin_df <- bin_df[, c("chrom", "start", "end")]
-  bin_df <- bin_df[bin_df$chrom %in% output_df$chrom, , drop = FALSE]
-  rownames(bin_df) <- seq_len(nrow(bin_df))
-  bin_gr <- GenomicRanges::makeGRangesFromDataFrame(bin_df)
-  bin_df$subjectHits <- rownames(bin_df)
-  colnames(bin_df) <- c("chrom", "start_bin", "end_bin", "subjectHits")
+  bin_ranges[, c("chrom", "start", "end", "arm")] <- stringr::str_split_fixed(bin_ranges$chrom_bin, "-|_", 4)
+  bin_ranges <- bin_ranges[, c("chrom_bin", "chrom", "start", "end")]
+  bin_ranges <- bin_ranges[bin_ranges$chrom %in% segment_ranges$chrom, , drop = FALSE]
+  colnames(bin_ranges) <- c("chrom_bin", "chrom", "start_bin", "end_bin")
+  bin_granges <- GenomicRanges::makeGRangesFromDataFrame(
+    bin_ranges,
+    start.field = "start_bin",
+    end.field = "end_bin",
+    keep.extra.columns = TRUE
+  )
 
-  overlap <- GenomicRanges::findOverlaps(output_gr, bin_gr, minoverlap = 2)
-  overlap_df <- as.data.frame(overlap)
+  segment_bin_overlap <- GenomicRanges::findOverlaps(segment_granges, bin_granges, minoverlap = 2)
+  overlap_table <- cbind(
+    as.data.frame(GenomicRanges::mcols(segment_granges))[S4Vectors::queryHits(segment_bin_overlap), , drop = FALSE],
+    as.data.frame(GenomicRanges::mcols(bin_granges))[S4Vectors::subjectHits(segment_bin_overlap), , drop = FALSE]
+  )
+  overlap_table <- overlap_table[, c("chrom", "start_output", "end_output", "start_bin", "end_bin")]
 
-  overlap_df <- merge(overlap_df, output_df, by = "queryHits")
-  overlap_df <- merge(overlap_df, bin_df, by = c("subjectHits", "chrom"))
-  overlap_df <- overlap_df[, c("chrom", "start_output", "end_output", "start_bin", "end_bin")]
-
-  output.plot <- merge(
-    overlap_df,
-    output,
+  segment_bin_table <- merge(
+    overlap_table,
+    segment_table,
     by.x = c("chrom", "start_output", "end_output"),
     by.y = c("chrom", "loc.start", "loc.end")
   )
-  output.plot$chrom_bin <- paste0(output.plot$chrom, "_", output.plot$start_bin, "_", output.plot$end_bin)
+  segment_bin_table$chrom_bin <- paste0(segment_bin_table$chrom, "_", segment_bin_table$start_bin, "_", segment_bin_table$end_bin)
 
-  segment_output_bin_dict <- output.plot[, c("chrom", "start_output", "end_output", "start_bin", "end_bin", "ID", "chrom_bin")]
-  segment_output_bin_dict$segment_output_ID <- paste0(
-    segment_output_bin_dict$chrom, "_",
-    segment_output_bin_dict$start_output, "_",
-    segment_output_bin_dict$end_output
+  segment_bin_map <- segment_bin_table[, c("chrom", "start_output", "end_output", "start_bin", "end_bin", "ID", "chrom_bin")]
+  segment_bin_map$segment_id <- paste0(
+    segment_bin_map$chrom, "_",
+    segment_bin_map$start_output, "_",
+    segment_bin_map$end_output
   )
-  segment_output_bin_dict$ID <- gsub("\\.", "-", segment_output_bin_dict$ID)
+  segment_bin_map$ID <- gsub("\\.", "-", segment_bin_map$ID)
 
-  segment_output_bin_dict
+  segment_bin_map
 }
 
-assign_cn_state <- function(chrom_depth_per_cell, svd.normalized.read.depth, segment.output) {
-  bins <- data.frame(bin = colnames(svd.normalized.read.depth), stringsAsFactors = FALSE)
-  bins$bin <- gsub("read_depth_sqrt_centered\\.", "", bins$bin)
-  colnames(svd.normalized.read.depth) <- bins$bin
-  bins <- bins[bins$bin %in% chrom_depth_per_cell$bin, , drop = FALSE]
-  bins_vec <- bins$bin
+#' Convert normalized depth values into expected or observed read counts
+#'
+#' Squares the depth matrix, joins per-cell library sizes, and scales each bin
+#' by library size to recover count-like values for downstream comparison.
+#'
+#' @param depth_matrix Numeric matrix of depth values with cells in rows and
+#'   bins in columns.
+#' @param lib_size Data frame containing `barcode` and `lib_size` columns.
+#' @param bin_names Character vector giving the bin columns to retain and order.
+#'
+#' @return A data frame of per-cell, per-bin counts with a `barcode` column.
+construct_count_matrix <- function(depth_matrix, lib_size, bin_names) {
+  depth_sq <- depth_matrix^2
+  depth_sq <- as.data.frame(depth_sq)
+  depth_sq$barcode <- rownames(depth_sq)
 
-  svd.normalized.read.depth <- recenter_svd_normalized_depth(
-    svd.normalized.read.depth,
-    chrom_depth_per_cell
-  )
-
-  observed.read.depth <- chrom_depth_per_cell[, c("barcode", "bin", "beta_i_c")]
-  observed.read.depth <- tidyr::pivot_wider(
-    observed.read.depth,
-    names_from = "bin",
-    values_from = "beta_i_c"
-  )
-  observed.read.depth <- as.data.frame(observed.read.depth)
-  rownames(observed.read.depth) <- observed.read.depth$barcode
-  observed.read.depth <- observed.read.depth[, -1, drop = FALSE]
-  observed.read.depth <- observed.read.depth[rownames(svd.normalized.read.depth), bins_vec, drop = FALSE]
-
-  svd.normalized.read.depth.recenter.sq <- svd.normalized.read.depth^2
-  svd.normalized.read.depth.recenter.sq <- as.data.frame(svd.normalized.read.depth.recenter.sq)
-  svd.normalized.read.depth.recenter.sq$barcode <- rownames(svd.normalized.read.depth.recenter.sq)
-
-  lib_size <- chrom_depth_per_cell %>%
-    dplyr::select(barcode, lib_size) %>%
-    dplyr::distinct()
-  svd.normalized.read.depth.recenter.sq <- merge(
-    svd.normalized.read.depth.recenter.sq,
+  depth_sq <- merge(
+    depth_sq,
     lib_size,
     by = "barcode"
   )
 
-  ncol_bins <- length(colnames(svd.normalized.read.depth.recenter.sq)) - 1
-  svd.normalized.read.depth.recenter.sq.count <- lapply(
-    colnames(svd.normalized.read.depth.recenter.sq)[2:ncol_bins],
+  count_matrix <- lapply(
+    bin_names,
     function(col) {
-      svd.normalized.read.depth.recenter.sq[[col]] * svd.normalized.read.depth.recenter.sq$lib_size
+      depth_sq[[col]] * depth_sq$lib_size
     }
   )
-  svd.normalized.read.depth.recenter.sq.count <- as.data.frame(do.call(cbind, svd.normalized.read.depth.recenter.sq.count))
-  rownames(svd.normalized.read.depth.recenter.sq.count) <- svd.normalized.read.depth.recenter.sq$barcode
-  colnames(svd.normalized.read.depth.recenter.sq.count) <- colnames(svd.normalized.read.depth.recenter.sq)[2:ncol_bins]
-  svd.normalized.read.depth.recenter.sq.count$barcode <- rownames(svd.normalized.read.depth.recenter.sq.count)
+  count_matrix <- as.data.frame(do.call(cbind, count_matrix))
+  rownames(count_matrix) <- depth_sq$barcode
+  colnames(count_matrix) <- bin_names
+  count_matrix$barcode <- rownames(count_matrix)
 
-  observed.read.depth.long <- as.data.frame(observed.read.depth)
-  observed.read.depth.long$barcode <- rownames(observed.read.depth.long)
-  observed.read.depth.long <- tidyr::pivot_longer(
-    observed.read.depth.long,
-    cols = -barcode,
-    names_to = "bin",
-    values_to = "observed.read.depth"
-  )
+  count_matrix
+}
 
-  observed.read.depth <- observed.read.depth^2
-  observed.read.depth$barcode <- rownames(observed.read.depth)
-  observed.read.depth <- merge(observed.read.depth, lib_size, by = "barcode")
-  observed.read.depth.count <- lapply(bins_vec, function(col) {
-    observed.read.depth[[col]] * observed.read.depth$lib_size
-  })
-  observed.read.depth.count <- as.data.frame(do.call(cbind, observed.read.depth.count))
-  rownames(observed.read.depth.count) <- observed.read.depth$barcode
-  colnames(observed.read.depth.count) <- bins_vec
-  observed.read.depth.count$barcode <- rownames(observed.read.depth.count)
-
-  observed.read.depth.count.melt <- tidyr::pivot_longer(
-    observed.read.depth.count,
-    cols = -barcode,
-    names_to = "variable",
-    values_to = "observed_count"
-  )
-  svd.normalized.read.depth.recenter.sq.count.melt <- tidyr::pivot_longer(
-    svd.normalized.read.depth.recenter.sq.count,
-    cols = -barcode,
-    names_to = "variable",
-    values_to = "expected_count"
-  )
-
-  comp_df <- merge(
-    observed.read.depth.count.melt,
-    svd.normalized.read.depth.recenter.sq.count.melt,
-    by = c("barcode", "variable")
-  )
-
-  comp_df$CN <- round((comp_df$observed_count / comp_df$expected_count) * 2)
-  comp_df[, c("chr", "start", "end", "arm")] <- stringr::str_split_fixed(comp_df$variable, "-|_", 4)
-  comp_df$start <- as.numeric(comp_df$start)
-  comp_df$chrom_bin <- comp_df$variable
-  comp_df$chrom_bin <- gsub("_p", "", comp_df$chrom_bin)
-  comp_df$chrom_bin <- gsub("_q", "", comp_df$chrom_bin)
-  comp_df$chrom_bin <- gsub("_cen", "", comp_df$chrom_bin)
-
-  comp_df$barcode <- gsub("\\#", "-", comp_df$barcode)
-  comp_df$barcode <- gsub("\\+", "-", comp_df$barcode)
-  comp_df$chrom_bin <- gsub("\\-", "\\_", comp_df$chrom_bin)
-
-  segment_output_bin_dict <- construct_segment_to_bin_dictionary(segment.output, bins_vec)
-
-  chrom_depth_with_segment <- merge(
-    segment_output_bin_dict[, c("ID", "chrom_bin", "segment_output_ID")],
-    comp_df,
-    by.x = c("ID", "chrom_bin"),
-    by.y = c("barcode", "chrom_bin")
-  )
-
-  chrom_depth_with_segment$chrom_name <- stringr::str_split_fixed(
-    chrom_depth_with_segment$chrom_bin,
-    "-|_",
-    3
-  )[, 1]
-
-  chrom_num_seg <- chrom_depth_with_segment %>%
+#' Construct copy-number calls for single-segment and multi-segment chromosomes
+#'
+#' Splits per-bin count comparisons into chromosomes with a single segment
+#' versus multiple segments, then computes weighted copy-number summaries for
+#' each segment. Single-segment chromosomes additionally receive Wilcoxon-based
+#' p-values and BH-adjusted calls.
+#'
+#' @param counts_with_segments Data frame linking per-bin observed and expected
+#'   counts to segment identifiers and chromosome labels.
+#'
+#' @return A data frame of segment-level copy-number calls with raw and adjusted
+#'   copy-number states.
+construct_cn_calls_by_segment_type <- function(counts_with_segments) {
+  segment_counts_by_chrom <- counts_with_segments %>%
     dplyr::group_by(ID, chrom_name) %>%
-    dplyr::summarise(n_segments = dplyr::n_distinct(segment_output_ID), .groups = "drop")
+    dplyr::summarise(n_segments = dplyr::n_distinct(segment_id), .groups = "drop")
 
-  chrom_num_seg.no_seg <- chrom_num_seg %>% dplyr::filter(n_segments == 1)
-  chrom_num_seg.no_seg$identifier <- paste0(chrom_num_seg.no_seg$ID, "_", chrom_num_seg.no_seg$chrom_name)
+  single_segment_chroms <- segment_counts_by_chrom %>% dplyr::filter(n_segments == 1)
+  single_segment_chroms$cell_chrom_key <- paste0(single_segment_chroms$ID, "_", single_segment_chroms$chrom_name)
 
-  chrom_num_seg.has_seg <- chrom_num_seg %>% dplyr::filter(n_segments > 1)
-  chrom_num_seg.has_seg$identifier <- paste0(chrom_num_seg.has_seg$ID, "_", chrom_num_seg.has_seg$chrom_name)
+  multi_segment_chroms <- segment_counts_by_chrom %>% dplyr::filter(n_segments > 1)
+  multi_segment_chroms$cell_chrom_key <- paste0(multi_segment_chroms$ID, "_", multi_segment_chroms$chrom_name)
 
-  chrom_depth_with_segment.no_seg <- chrom_depth_with_segment %>%
-    dplyr::mutate(identifier = paste0(ID, "_", chrom_name)) %>%
-    dplyr::filter(identifier %in% chrom_num_seg.no_seg$identifier)
+  single_segment_counts <- counts_with_segments %>%
+    dplyr::mutate(cell_chrom_key = paste0(ID, "_", chrom_name)) %>%
+    dplyr::filter(cell_chrom_key %in% single_segment_chroms$cell_chrom_key)
 
-  chrom_depth_with_segment.has_seg <- chrom_depth_with_segment %>%
-    dplyr::mutate(identifier = paste0(ID, "_", chrom_name)) %>%
-    dplyr::filter(identifier %in% chrom_num_seg.has_seg$identifier)
+  multi_segment_counts <- counts_with_segments %>%
+    dplyr::mutate(cell_chrom_key = paste0(ID, "_", chrom_name)) %>%
+    dplyr::filter(cell_chrom_key %in% multi_segment_chroms$cell_chrom_key)
 
-  cn_bin_no_seg <- chrom_depth_with_segment.no_seg %>%
-    dplyr::group_by(ID, segment_output_ID) %>%
+  cn_calls_single_segment <- single_segment_counts %>%
+    dplyr::group_by(ID, segment_id) %>%
     dplyr::mutate(
       total_in_group = sum(expected_count),
       weight = expected_count / total_in_group,
-      CN_state_raw = sum(CN * weight),
-      CN_state_adj = round(CN_state_raw, 0),
+      cn_state_raw = sum(bin_cn * weight),
+      cn_state_adj = round(cn_state_raw, 0),
       p_value = if (dplyr::n() >= 3) {
         stats::wilcox.test(expected_count, observed_count, paired = TRUE)$p.value
       } else {
@@ -221,23 +184,111 @@ assign_cn_state <- function(chrom_depth_per_cell, svd.normalized.read.depth, seg
       }
     )
 
-  cn_bin_no_seg$p_value.adj <- stats::p.adjust(cn_bin_no_seg$p_value, method = "BH")
-  cn_bin_no_seg$CN_state_adj <- ifelse(
-    cn_bin_no_seg$p_value.adj >= 0.05 & cn_bin_no_seg$CN_state_adj != 2,
+  cn_calls_single_segment$p_value_adj <- stats::p.adjust(cn_calls_single_segment$p_value, method = "BH")
+  cn_calls_single_segment$cn_state_adj <- ifelse(
+    cn_calls_single_segment$p_value_adj >= 0.05 & cn_calls_single_segment$cn_state_adj != 2,
     2,
-    cn_bin_no_seg$CN_state_adj
+    cn_calls_single_segment$cn_state_adj
   )
 
-  cn_bin_has_seg <- chrom_depth_with_segment.has_seg %>%
-    dplyr::group_by(ID, segment_output_ID) %>%
+  cn_calls_multi_segment <- multi_segment_counts %>%
+    dplyr::group_by(ID, segment_id) %>%
     dplyr::mutate(
       total_in_group = sum(expected_count),
       weight = expected_count / total_in_group,
-      CN_state_raw = sum(CN * weight),
-      CN_state_adj = round(CN_state_raw, 0)
+      cn_state_raw = sum(bin_cn * weight),
+      cn_state_adj = round(cn_state_raw, 0)
     )
-  cn_bin_has_seg$p_value <- NA_real_
-  cn_bin_has_seg$p_value.adj <- NA_real_
+  cn_calls_multi_segment$p_value <- NA_real_
+  cn_calls_multi_segment$p_value_adj <- NA_real_
 
-  rbind(cn_bin_no_seg, cn_bin_has_seg)
+  rbind(cn_calls_single_segment, cn_calls_multi_segment)
+}
+
+#' Assign segment-level copy-number states from observed and expected depth
+#'
+#' Reconstructs observed and expected read counts, links them to segmentation
+#' intervals, and summarizes each segment into a copy-number state.
+#'
+#' @param chrom_depth_per_cell Long-format normalized depth table returned by
+#'   [normalize_depth()].
+#' @param svd_normalized_depth Recentered expected depth matrix in bin space.
+#' @param segment_table Segmentation output returned by [segment_residuals()].
+#'
+#' @return A data frame of segment-level copy-number calls.
+assign_cn_state <- function(chrom_depth_per_cell, svd_normalized_depth, segment_table) {
+  bin_info <- data.frame(bin = colnames(svd_normalized_depth), stringsAsFactors = FALSE)
+  bin_info$bin <- gsub("read_depth_sqrt_centered\\.", "", bin_info$bin)
+  colnames(svd_normalized_depth) <- bin_info$bin
+  bin_info <- bin_info[bin_info$bin %in% chrom_depth_per_cell$bin, , drop = FALSE]
+  bin_names <- bin_info$bin
+
+  svd_normalized_depth <- recenter_svd_normalized_depth(
+    svd_normalized_depth,
+    chrom_depth_per_cell
+  )
+
+  observed_depth_matrix <- chrom_depth_per_cell[, c("barcode", "bin", "beta_i_c")]
+  observed_depth_matrix <- tidyr::pivot_wider(
+    observed_depth_matrix,
+    names_from = "bin",
+    values_from = "beta_i_c"
+  )
+  observed_depth_matrix <- as.data.frame(observed_depth_matrix)
+  rownames(observed_depth_matrix) <- observed_depth_matrix$barcode
+  observed_depth_matrix <- observed_depth_matrix[, -1, drop = FALSE]
+  observed_depth_matrix <- observed_depth_matrix[rownames(svd_normalized_depth), bin_names, drop = FALSE]
+
+  lib_size <- chrom_depth_per_cell %>%
+    dplyr::select(barcode, lib_size) %>%
+    dplyr::distinct()
+  expected_count_matrix <- construct_count_matrix(svd_normalized_depth, lib_size, bin_names)
+
+  observed_count_matrix <- construct_count_matrix(observed_depth_matrix, lib_size, bin_names)
+
+  observed_count_long <- tidyr::pivot_longer(
+    observed_count_matrix,
+    cols = -barcode,
+    names_to = "variable",
+    values_to = "observed_count"
+  )
+  expected_count_long <- tidyr::pivot_longer(
+    expected_count_matrix,
+    cols = -barcode,
+    names_to = "variable",
+    values_to = "expected_count"
+  )
+
+  count_comparison <- merge(
+    observed_count_long,
+    expected_count_long,
+    by = c("barcode", "variable")
+  )
+
+  count_comparison$bin_cn <- round((count_comparison$observed_count / count_comparison$expected_count) * 2)
+  count_comparison[, c("chrom", "start", "end", "arm")] <- stringr::str_split_fixed(count_comparison$variable, "-|_", 4)
+  count_comparison$start <- as.numeric(count_comparison$start)
+  count_comparison$chrom_bin <- count_comparison$variable
+  count_comparison$chrom_bin <- gsub("_(p|q|cen)$", "", count_comparison$chrom_bin)
+
+  count_comparison$barcode <- gsub("\\#", "-", count_comparison$barcode)
+  count_comparison$barcode <- gsub("\\+", "-", count_comparison$barcode)
+  count_comparison$chrom_bin <- gsub("\\-", "\\_", count_comparison$chrom_bin)
+
+  segment_bin_map <- construct_segment_to_bin_dictionary(segment_table, bin_names)
+
+  counts_with_segments <- merge(
+    segment_bin_map[, c("ID", "chrom_bin", "segment_id")],
+    count_comparison,
+    by.x = c("ID", "chrom_bin"),
+    by.y = c("barcode", "chrom_bin")
+  )
+
+  counts_with_segments$chrom_name <- stringr::str_split_fixed(
+    counts_with_segments$chrom_bin,
+    "-|_",
+    3
+  )[, 1]
+
+  construct_cn_calls_by_segment_type(counts_with_segments)
 }
