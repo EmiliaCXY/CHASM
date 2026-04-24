@@ -115,7 +115,7 @@ cn_state.nb <- cn_state.nb %>% filter(chrom != "chrY")
 
 print(
   cn_state.nb %>%
-    dplyr::count(chrom, calledCNA, name = "n_calls")
+    dplyr::count(chrom, called_cna, name = "n_calls")
 )
 
 results_path <- file.path("tutorial", paste0(sample_name, "_chrom_nb_calls.csv"))
