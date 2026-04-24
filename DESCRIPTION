@@ -1,0 +1,22 @@
+Package: CHASM
+Type: Package
+Title: Wavelet and Copy Number Utilities for CHASM
+Version: 0.0.1
+Authors@R: person("Emilia", "C", email = "emilia@example.org", role = c("aut", "cre"))
+Description: Packages the wavelet-transform, segmentation, and copy-number
+    inference scripts from the CHASM project into reusable R functions.
+License: MIT + file LICENSE
+Encoding: UTF-8
+RoxygenNote: 7.3.2
+Imports:
+    DNAcopy,
+    dplyr,
+    GenomicRanges,
+    magrittr,
+    stringr,
+    tidyr,
+    wavethresh
+Suggests:
+    rsvd,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3

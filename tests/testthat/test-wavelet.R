@@ -1,0 +1,62 @@
+test_that("normalize_depth centers by beta_i_hat", {
+  bins <- c("chr1_1_100_p", "chr1_101_200_p", "chr1_201_300_q", "chr1_301_400_q")
+  df.depth <- data.frame(
+    barcode = c("cell1", "cell2"),
+    chr1_1_100_p = c(2000, 1500),
+    chr1_101_200_p = c(1000, 1800),
+    chr1_201_300_q = c(1200, 1400),
+    chr1_301_400_q = c(1800, 1300),
+    stringsAsFactors = FALSE
+  )
+
+  chrom_depth <- normalize_depth(df.depth, bins)
+  expect_true(all(c("read_depth_sqrt_centered", "beta_i_c", "beta_i_hat") %in% colnames(chrom_depth)))
+
+  center_diff <- chrom_depth$beta_i_c - chrom_depth$beta_i_hat
+  expect_lt(max(abs(center_diff - chrom_depth$read_depth_sqrt_centered)), 1e-10)
+})
+
+test_that("wavelet_transform returns consistent dimensions", {
+  bins <- c("chr1_1_100_p", "chr1_101_200_p", "chr1_201_300_q", "chr1_301_400_q")
+  df.depth <- data.frame(
+    barcode = c("cell1", "cell2"),
+    chr1_1_100_p = c(2000, 1500),
+    chr1_101_200_p = c(1000, 1800),
+    chr1_201_300_q = c(1200, 1400),
+    chr1_301_400_q = c(1800, 1300),
+    stringsAsFactors = FALSE
+  )
+  chrom_depth <- normalize_depth(df.depth, bins)
+
+  wt <- wavelet_transform(chrom_depth, bins, chromosomes = "chr1")
+
+  expect_true(is.matrix(wt$mat.wavelet.transform))
+  expect_true(is.matrix(wt$chrom.informed.wavelet))
+  expect_equal(nrow(wt$chrom.informed.wavelet), ncol(wt$chrom.informed.wavelet))
+  expect_equal(ncol(wt$mat.wavelet.transform), length(unique(chrom_depth$barcode)))
+})
+
+test_that("robust_pca decomposes matrix", {
+  skip_if_not_installed("rsvd")
+
+  m <- matrix(c(1, 2, 3, 4, 10, 2), nrow = 3)
+  colnames(m) <- c("cell1", "cell2")
+  rpca_out <- robust_pca(m)
+
+  expect_true(all(c("Expected_Normal", "Sparse_Signal") %in% names(rpca_out)))
+  expect_equal(dim(rpca_out$Expected_Normal), dim(m))
+  expect_equal(dim(rpca_out$Sparse_Signal), dim(m))
+  expect_lt(max(abs(rpca_out$Expected_Normal + rpca_out$Sparse_Signal - m)), 1e-4)
+})
+
+test_that("inv_wavelet_transform restores dimensions", {
+  mat.signal <- matrix(1:6, nrow = 3)
+  colnames(mat.signal) <- c("cell1", "cell2")
+
+  mat.wavelet <- diag(3)
+  rownames(mat.wavelet) <- c("b1", "b2", "b3")
+
+  inv <- inv_wavelet_transform(mat.signal, mat.wavelet)
+  expect_equal(dim(inv), c(2, 3))
+  expect_lt(max(abs(inv - t(mat.signal))), 1e-10)
+})
