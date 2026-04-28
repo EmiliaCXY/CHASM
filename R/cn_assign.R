@@ -57,32 +57,57 @@ construct_segment_to_bin_dictionary <- function(segment_table, bins) {
   }
 
   segment_ranges <- segment_table[, c("chrom", "loc.start", "loc.end")] %>% dplyr::distinct()
+  segment_ranges <- as.data.frame(segment_ranges, stringsAsFactors = FALSE)
   colnames(segment_ranges) <- c("chrom", "start_output", "end_output")
-  segment_granges <- GenomicRanges::makeGRangesFromDataFrame(
-    segment_ranges,
-    keep.extra.columns = TRUE
+  segment_ranges$start_output <- as.numeric(segment_ranges$start_output)
+  segment_ranges$end_output <- as.numeric(segment_ranges$end_output)
+
+  if (anyNA(segment_ranges$start_output) || anyNA(segment_ranges$end_output)) {
+    stop("construct_segment_to_bin_dictionary: segment_table contains non-numeric loc.start/loc.end values.")
+  }
+
+  segment_granges <- GenomicRanges::GRanges(
+    seqnames = segment_ranges$chrom,
+    ranges = IRanges::IRanges(
+      start = segment_ranges$start_output,
+      end = segment_ranges$end_output
+    )
   )
 
-  bin_ranges <- as.data.frame(bins)
+  bin_ranges <- as.data.frame(bins, stringsAsFactors = FALSE)
   colnames(bin_ranges) <- c("chrom_bin")
 
   bin_ranges[, c("chrom", "start", "end", "arm")] <- stringr::str_split_fixed(bin_ranges$chrom_bin, "-|_", 4)
   bin_ranges <- bin_ranges[, c("chrom_bin", "chrom", "start", "end")]
   bin_ranges <- bin_ranges[bin_ranges$chrom %in% segment_ranges$chrom, , drop = FALSE]
   colnames(bin_ranges) <- c("chrom_bin", "chrom", "start_bin", "end_bin")
-  bin_granges <- GenomicRanges::makeGRangesFromDataFrame(
-    bin_ranges,
-    start.field = "start_bin",
-    end.field = "end_bin",
-    keep.extra.columns = TRUE
+  bin_ranges$start_bin <- as.numeric(bin_ranges$start_bin)
+  bin_ranges$end_bin <- as.numeric(bin_ranges$end_bin)
+
+  if (anyNA(bin_ranges$start_bin) || anyNA(bin_ranges$end_bin)) {
+    stop(
+      "construct_segment_to_bin_dictionary: bins must encode numeric start/end coordinates, e.g. 'chr1_1_2000000_p'."
+    )
+  }
+
+  bin_granges <- GenomicRanges::GRanges(
+    seqnames = bin_ranges$chrom,
+    ranges = IRanges::IRanges(
+      start = bin_ranges$start_bin,
+      end = bin_ranges$end_bin
+    ),
+    chrom_bin = bin_ranges$chrom_bin
   )
 
   segment_bin_overlap <- GenomicRanges::findOverlaps(segment_granges, bin_granges, minoverlap = 2)
-  overlap_table <- cbind(
-    as.data.frame(GenomicRanges::mcols(segment_granges))[S4Vectors::queryHits(segment_bin_overlap), , drop = FALSE],
-    as.data.frame(GenomicRanges::mcols(bin_granges))[S4Vectors::subjectHits(segment_bin_overlap), , drop = FALSE]
-  )
+  
+  segment_ranges_df <- as.data.frame(segment_granges)[S4Vectors::queryHits(segment_bin_overlap), , drop = FALSE]
+  colnames(segment_ranges_df) <- c("chrom", "start_output", "end_output", "width_output", 'strand_output')
+  bin_granges_df <- as.data.frame(bin_granges)[S4Vectors::subjectHits(segment_bin_overlap), , drop = FALSE]
+  colnames(bin_granges_df) <- c("chrom2", "start_bin", "end_bin", "width_bin", 'strand_bin', 'chrom_bin')
+  overlap_table <- cbind(segment_ranges_df, bin_granges_df)
   overlap_table <- overlap_table[, c("chrom", "start_output", "end_output", "start_bin", "end_bin")]
+  rownames(overlap_table) <- NULL
 
   segment_bin_table <- merge(
     overlap_table,

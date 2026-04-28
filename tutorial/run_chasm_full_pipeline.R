@@ -73,7 +73,9 @@ load_chasm <- function() {
   )
 }
 
+setwd('/Users/emiliac/Documents/Rotations/Zhang_lab/Projects/scATACcnv/package')
 load_chasm()
+
 
 suppressPackageStartupMessages({
   library(dplyr)
@@ -105,7 +107,7 @@ message(
 )
 
 simulate_data_dir <- "/Users/emiliac/Dropbox/Rotations/Zhang_lab/scATAC/OtherData/Lin_et_al_breast_epi_GSE272504_spike_in_V2"
-output_root <- file.path("tutorial", paste0(spikein.chrom, "_", spikein.size, "_", bin.size), "Wavelet_robustPCA_V7")
+output_root <- file.path("tutorial")
 dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
 spikein_cells_path <- file.path(
   simulate_data_dir,
@@ -168,7 +170,7 @@ wavelet_output <- list(
 )
 
 wavelet_output_path <- file.path(output_root, paste0(sample_name, "_output_wavelet.rds"))
-saveRDS(wavelet_output, file = wavelet_output_path)
+# saveRDS(wavelet_output, file = wavelet_output_path)
 message("Saved wavelet output to: ", wavelet_output_path)
 
 read_depth_chrom_path <- file.path(
@@ -189,10 +191,33 @@ rownames(read.depth.chrom) <- read.depth.chrom$ID
 cn_state.nb <- assign_cn_state.chrom(read.depth.chrom, positions)
 
 message("Combining segment-level and chromosome-level results...")
+merge_calls <- function(cn_wavelet, cn_nb) {
+  cn_nb$ID <- sub("\\+", "-", cn_nb$ID)
+  cn_merged <- merge(
+    cn_wavelet,
+    cn_nb,
+    by.x = c("ID", "chrom_name"),
+    by.y = c("ID", "chrom"),
+    suffixes = c("_wl", "_nb")
+  )
+  
+  cn_merged$cn_state_final <- ifelse(
+    cn_merged$called_cna == "YES" & !is.na(cn_merged$p_value_adj_wl),
+    cn_merged$cn_state_binom,
+    ifelse(
+      cn_merged$called_cna == "NO" & !is.na(cn_merged$p_value_adj_wl) & cn_merged$p_value_adj_wl < 0.05,
+      2,
+      cn_merged$cn_state_adj
+    )
+  )
+  cn_merged$cn_state_final <- round(cn_merged$cn_state_final, 0)
+  
+  cn_merged
+}
 cn_df.comb <- merge_calls(cn_bin, cn_state.nb)
 
 combined_output_path <- file.path(output_root, paste0(sample_name, "_output_cn_df.comb.rds"))
-saveRDS(cn_df.comb, file = combined_output_path)
+# saveRDS(cn_df.comb, file = combined_output_path)
 message("Saved combined CN calls to: ", combined_output_path)
 
 cn_bin$ID_clean <- sanitize_cell_ids(cn_bin$ID)
@@ -203,14 +228,14 @@ if (file.exists(spikein_cells_path)) {
   spikein_ids <- rownames(cells.spikein)
 
   cn_bin.spikein <- cn_bin %>%
-    filter(ID_clean %in% spikein_ids, chrom == spikein.chrom)
+    filter(ID_clean %in% spikein_ids, chrom_name == spikein.chrom)
 
   cn_bin.nonspikein <- cn_bin %>%
     filter(!ID_clean %in% spikein_ids)
 
   cn_bin.spikein.false <- cn_bin %>%
     filter(!ID_clean %in% spikein_ids, cn_state_adj != 2) %>%
-    group_by(ID_clean, chrom) %>%
+    group_by(ID_clean, chrom_name) %>%
     summarise(n = n(), .groups = "drop")
 
   print(

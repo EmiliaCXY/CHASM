@@ -195,6 +195,7 @@ estimate_variance_dispersion <- function(
 
   mean_variance_df <- chrom_depth_per_cell %>%
     dplyr::group_by(depth_bin_new) %>%
+    dplyr::filter(read_depth>quantile(read_depth, var_cut_off) & read_depth<quantile(read_depth, 1 - var_cut_off)) %>% 
     dplyr::summarise(
       n = dplyr::n(),
       var = stats::var(read_depth, na.rm = TRUE),

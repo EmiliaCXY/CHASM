@@ -60,3 +60,26 @@ test_that("inv_wavelet_transform restores dimensions", {
   expect_equal(dim(inv), c(2, 3))
   expect_lt(max(abs(inv - t(mat.signal))), 1e-10)
 })
+
+test_that("construct_segment_to_bin_dictionary maps segments to bins", {
+  segment_table <- data.frame(
+    chrom = c("chr1", "chr1"),
+    loc.start = c(1, 201),
+    loc.end = c(200, 300),
+    ID = c("cell1", "cell1"),
+    stringsAsFactors = FALSE
+  )
+  bins <- c("chr1_1_100_p", "chr1_101_200_p", "chr1_201_300_q")
+
+  segment_bin_map <- construct_segment_to_bin_dictionary(segment_table, bins)
+
+  expect_equal(nrow(segment_bin_map), 3)
+  expect_equal(
+    unique(segment_bin_map$segment_id),
+    c("chr1_1_200", "chr1_201_300")
+  )
+  expect_equal(
+    segment_bin_map$chrom_bin,
+    c("chr1_1_100", "chr1_101_200", "chr1_201_300")
+  )
+})
