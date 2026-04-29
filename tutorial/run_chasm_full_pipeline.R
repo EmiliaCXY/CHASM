@@ -87,9 +87,9 @@ chromosomes <- paste0("chr", c(1:22, "X", "Y"))
 
 # Update these parameters for the manual dataset you want to evaluate.
 spikein.chrom <- "chr1"
-spikein.size <- "full"
+spikein.size <- "50mb"
 spikein.cnv <- "2"
-spikein.pct <- "10pct"
+spikein.pct <- "5pct"
 spikein.rep <- "Rep1"
 bin.size <- "2mb"
 
@@ -157,7 +157,7 @@ svd.normalized.read.depth.mat <- inv_wavelet_transform(
 message("Segmenting residuals...")
 colnames(residuals.mat) <- rownames(wavelet.transform$mat.wavelet.transform)
 colnames(svd.normalized.read.depth.mat) <- rownames(wavelet.transform$mat.wavelet.transform)
-segment.table <- segment_residuals(residuals.mat, alpha = 0.005)
+segment.table <- segment_residuals(residuals.mat, alpha = 0.001)
 
 message("Assigning copy number states...")
 cn_bin <- assign_cn_state(chrom.depth.per.cell, svd.normalized.read.depth.mat, segment.table)
