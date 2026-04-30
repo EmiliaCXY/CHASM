@@ -32,6 +32,33 @@ For development use, you can load the package without installing it:
 pkgload::load_all("/path/to/scATACcnv/package")
 ```
 
+## Example Data
+
+The package bundles an example read-depth matrix at
+`inst/extdata/Read_depth_matrix_chr1_full_2_5pct_Rep1.rds`. Load it with:
+
+```r
+library(CHASM)
+
+example_rds <- example_read_depth_path()
+read_depth <- readRDS(example_rds)
+read_depth$barcode <- rownames(read_depth)
+read_depth <- read_depth[, c("barcode", setdiff(colnames(read_depth), "barcode"))]
+```
+
+This produces a wavelet-workflow input table with one row per cell, a
+`barcode` column, and one column per genomic bin.
+
+To discover other bundled examples:
+
+```r
+list_example_data()
+
+read_depth_chrom <- readRDS(
+  example_data_path("Read_depth_matrix_chr1_full_2_5pct_Rep1_chrom.rds")
+)
+```
+
 ## Input Data
 
 `CHASM` currently supports two related workflows.

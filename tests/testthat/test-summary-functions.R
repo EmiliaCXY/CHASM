@@ -61,3 +61,28 @@ test_that("prepare_cn_heatmap_input orders bins and inserts chromosome gaps", {
   expect_equal(unname(heatmap_input$matrix["cell1", ]), c(2, 1, 4))
   expect_equal(unname(heatmap_input$matrix["cell2", ]), c(2, 0, 4))
 })
+
+test_that("list_example_data returns bundled example files", {
+  example_files <- list_example_data()
+
+  expect_true(is.character(example_files))
+  expect_true("Read_depth_matrix_chr1_full_2_5pct_Rep1.rds" %in% example_files)
+  expect_true("1-27Nx_peakfrag_cov_5mb_chrom.rds" %in% example_files)
+})
+
+test_that("example_data_path resolves bundled example files", {
+  example_rds <- example_data_path("Read_depth_matrix_chr1_full_2_5pct_Rep1.rds")
+  kidney_rds <- example_data_path("1-27Nx_peakfrag_cov_5mb.rds")
+
+  expect_true(file.exists(example_rds))
+  expect_equal(basename(example_rds), "Read_depth_matrix_chr1_full_2_5pct_Rep1.rds")
+  expect_true(file.exists(kidney_rds))
+  expect_equal(basename(kidney_rds), "1-27Nx_peakfrag_cov_5mb.rds")
+})
+
+test_that("example_read_depth_path returns the bundled example RDS", {
+  example_rds <- example_read_depth_path()
+
+  expect_true(file.exists(example_rds))
+  expect_equal(basename(example_rds), "Read_depth_matrix_chr1_full_2_5pct_Rep1.rds")
+})
