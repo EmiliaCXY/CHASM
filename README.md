@@ -98,7 +98,7 @@ library(CHASM)
 chromosomes <- paste0("chr", c(1:22, "X", "Y"))
 
 bins <- setdiff(colnames(read_depth), "barcode")
-chrom_depth <- normalize_depth(read_depth, bins)
+chrom_depth <- normalize_depth(read_depth, bins, chromosomes)
 wt <- wavelet_transform(chrom_depth, bins, chromosomes)
 rpca <- robust_pca(wt$mat.wavelet.transform)
 
@@ -156,3 +156,8 @@ Example scripts are available in [`tutorial/`](tutorial):
 
 These scripts are local usage examples and currently contain dataset-specific
 paths that should be updated for a different environment.
+
+An HTML tutorial version of the bundled full example pipeline is available at
+[`tutorial/chasm-example-full-pipeline.html`](tutorial/chasm-example-full-pipeline.html),
+with vignette source in
+[`vignettes/chasm-example-full-pipeline.Rmd`](vignettes/chasm-example-full-pipeline.Rmd).

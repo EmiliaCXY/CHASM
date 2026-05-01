@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CHASM</title>
+  <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">CHASM</p>
+      <h1>Copy-number analysis tools for scATAC-seq</h1>
+      <p class="lede">
+        <code>CHASM</code> packages the wavelet-transform, segmentation, and
+        copy-number inference code from the <code>scATACcnv</code> project into
+        reusable R functions.
+      </p>
+      <div class="hero-actions">
+        <a class="button" href="chasm-example-full-pipeline.html">Open Tutorial Vignette</a>
+        <a class="button button-secondary" href="../README.md">Read README</a>
+      </div>
+    </header>
+
+    <section class="panel">
+      <h2>What This Package Covers</h2>
+      <div class="grid">
+        <article>
+          <h3>Wavelet Workflow</h3>
+          <p>
+            Normalize binned read depth, apply chromosome-aware wavelet
+            transforms, denoise with robust PCA, and assign segment-level
+            copy-number states.
+          </p>
+        </article>
+        <article>
+          <h3>Chromosome Workflow</h3>
+          <p>
+            Run chromosome-level negative-binomial calling and combine it with
+            segment-level evidence into final copy-number state calls.
+          </p>
+        </article>
+        <article>
+          <h3>Bundled Examples</h3>
+          <p>
+            The package ships with example read-depth matrices and a rendered
+            tutorial vignette so the workflow can be explored without external
+            setup.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Start Here</h2>
+      <ol class="steps">
+        <li>Install the package dependencies listed in the README.</li>
+        <li>Load the package with <code>pkgload::load_all()</code> for development or install it as a source package.</li>
+        <li>Open the tutorial vignette to see the bundled workflow and heatmap output.</li>
+      </ol>
+    </section>
+
+    <section class="panel">
+      <h2>Tutorial</h2>
+      <p>
+        The main package walkthrough is available as a rendered HTML vignette.
+        It includes a short narrative introduction and a heatmap rendered from
+        executed plotting code.
+      </p>
+      <p>
+        <a class="text-link" href="chasm-example-full-pipeline.html">CHASM Example Full Pipeline</a>
+      </p>
+    </section>
+  </main>
+</body>
+</html>

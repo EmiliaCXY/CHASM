@@ -8,15 +8,25 @@
 #'   column per genomic bin.
 #' @param bins Character vector of bin column names to include in the
 #'   normalization.
+#' @param chromosomes Character vector giving the chromosome order to apply
+#'   when reordering bins before normalization.
 #'
 #' @return A long-format data frame containing per-cell, per-bin normalized and
 #'   centered depth values along with library-size statistics.
-normalize_depth <- function(df.depth, bins) {
+normalize_depth <- function(df.depth, bins, chromosomes = paste0("chr", c(1:22, "X", "Y"))) {
   df.depth <- as.data.frame(df.depth)
 
   if (!all(c("barcode", bins) %in% colnames(df.depth))) {
     stop("normalize_depth: df.depth must contain 'barcode' and all bins columns.")
   }
+
+  bin_info <- data.frame(bins = bins, stringsAsFactors = FALSE)
+  bin_info[, c("chrom", "start", "end", "arm")] <- stringr::str_split_fixed(bin_info$bins, "_", 4)
+  bin_info$chrom <- factor(bin_info$chrom, levels = chromosomes)
+  bin_info$start <- as.numeric(bin_info$start)
+  bin_info <- dplyr::arrange(bin_info, chrom, start)
+  bins <- bin_info$bins
+  df.depth <- df.depth[, c(bins, "barcode"), drop = FALSE]
 
   df.depth$lib_size <- rowSums(df.depth[, bins, drop = FALSE], na.rm = TRUE)
 
@@ -34,10 +44,13 @@ normalize_depth <- function(df.depth, bins) {
 
   lib_size_thres2 <- stats::quantile(df.depth$lib_size, probs = 0.75, na.rm = TRUE)
 
-  beta_i_hat_per_chrom <- chrom_depth_per_cell %>%
-    dplyr::filter(lib_size >= lib_size_thres2) %>%
-    dplyr::group_by(bin) %>%
-    dplyr::summarise(beta_i_hat = stats::median(beta_i_c, na.rm = TRUE), .groups = "drop")
+  beta_i_hat_per_chrom <- dplyr::filter(chrom_depth_per_cell, lib_size >= lib_size_thres2)
+  beta_i_hat_per_chrom <- dplyr::group_by(beta_i_hat_per_chrom, bin)
+  beta_i_hat_per_chrom <- dplyr::summarise(
+    beta_i_hat_per_chrom,
+    beta_i_hat = stats::median(beta_i_c, na.rm = TRUE),
+    .groups = "drop"
+  )
 
   chrom_depth_per_cell <- merge(
     chrom_depth_per_cell,
@@ -168,7 +181,7 @@ pad_read_depth_matrix_for_wavelet <- function(centered_depth_matrix, bin_info, a
 #'
 #' @return A list with the transformed matrix (`mat.wavelet.transform`) and the
 #'   chromosome-informed wavelet basis (`chrom.informed.wavelet`).
-wavelet_transform <- function(chrom_depth_per_cell, bins, chromosomes) {
+wavelet_transform <- function(chrom_depth_per_cell, bins, chromosomes = paste0("chr", c(1:22, "X", "Y"))) {
   if (!all(c("barcode", "bin", "read_depth_sqrt_centered") %in% colnames(chrom_depth_per_cell))) {
     stop("wavelet_transform: chrom_depth_per_cell must contain 'barcode', 'bin', 'read_depth_sqrt_centered'.")
   }

@@ -77,6 +77,10 @@ sanitize_cell_ids <- function(x) {
 package_root <- resolve_package_root()
 load_chasm(package_root)
 
+# ==============================================================================
+# Read input data
+# ==============================================================================
+
 suppressPackageStartupMessages({
   library(dplyr)
   library(tidyr)
@@ -105,6 +109,11 @@ spikein_cells_path <- example_data_path(spikein_cells_file)
 
 message("Reading bundled read-depth matrix: ", read_depth_path)
 read.depth <- readRDS(read_depth_path)
+
+# ==============================================================================
+# Prepare input
+# ==============================================================================
+
 rownames(read.depth) <- sanitize_cell_ids(rownames(read.depth))
 read.depth$barcode <- rownames(read.depth)
 
@@ -113,6 +122,10 @@ chrom_bins <- bins[grepl("^chr", bins)]
 ki_gl_bins <- bins[grepl("^(KI|GL)", bins)]
 bins <- setdiff(chrom_bins, ki_gl_bins)
 read.depth <- read.depth[, c(bins, "barcode")]
+
+# ==============================================================================
+# Normalize and compute cell-specific control
+# ==============================================================================
 
 message("Normalizing read depth with wavelet transform and robust PCA...")
 chrom.depth.per.cell <- normalize_depth(read.depth, bins)
@@ -131,8 +144,16 @@ svd.normalized.read.depth.mat <- inv_wavelet_transform(
 colnames(residuals.mat) <- rownames(wavelet.transform$mat.wavelet.transform)
 colnames(svd.normalized.read.depth.mat) <- rownames(wavelet.transform$mat.wavelet.transform)
 
+# ==============================================================================
+# Segmentation
+# ==============================================================================
+
 message("Segmenting residuals...")
 segment.table <- segment_residuals(residuals.mat, alpha = 0.005)
+
+# ==============================================================================
+# Assign copy number states
+# ==============================================================================
 
 message("Assigning segment-level copy-number states...")
 cn_bin <- assign_cn_state(chrom.depth.per.cell, svd.normalized.read.depth.mat, segment.table)
@@ -147,15 +168,31 @@ wavelet_output_path <- file.path(output_root, paste0(sample_name, "_output_wavel
 saveRDS(wavelet_output, file = wavelet_output_path)
 message("Saved wavelet output to: ", wavelet_output_path)
 
+# ==============================================================================
+# Read input data for chromosomal level analysis
+# ==============================================================================
+
 message("Reading bundled chromosome-level matrix: ", read_depth_chrom_path)
 read.depth.chrom <- readRDS(read_depth_chrom_path)
+
+# ==============================================================================
+# Prepare input
+# ==============================================================================
+
 positions <- colnames(read.depth.chrom)
 read.depth.chrom$ID <- sanitize_cell_ids(rownames(read.depth.chrom))
-read.depth.chrom$celltype <- "unknown"
+read.depth.chrom$celltype <- "unknown" # here we didn't use cell type information in order to compare with other methods 
 rownames(read.depth.chrom) <- read.depth.chrom$ID
 
+# ==============================================================================
+# Chromosomal level copy number state assignment
+# ==============================================================================
 message("Assigning chromosome-level copy-number states...")
 cn_state.nb <- assign_cn_state.chrom(read.depth.chrom, positions)
+
+# ==============================================================================
+# Combine segment-level and chromosome-level results
+# ==============================================================================
 
 message("Combining segment-level and chromosome-level results...")
 cn_df.comb <- merge_calls(cn_bin, cn_state.nb)
@@ -163,32 +200,23 @@ combined_output_path <- file.path(output_root, paste0(sample_name, "_output_cn_d
 saveRDS(cn_df.comb, file = combined_output_path)
 message("Saved combined CN calls to: ", combined_output_path)
 
+# ==============================================================================
+# Post-processing
+# ==============================================================================
+
 cn_df.comb$ID_clean <- sanitize_cell_ids(cn_df.comb$ID)
+cn_df.comb$chrom_name <- str_split_fixed(cn_df.comb$chrom_bin, "_", 3)[, 1]
+
+# ==============================================================================
+# Reading spike-in annotations and preparing for plotting
+# ==============================================================================
 
 message("Reading bundled spike-in annotations: ", spikein_cells_path)
 cells.spikein <- readRDS(spikein_cells_path)
+rownames(cells.spikein) <- sub('_', 'X', rownames(cells.spikein))
+rownames(cells.spikein) <- sub('-', 'X', rownames(cells.spikein))
 spikein_ids <- sanitize_cell_ids(rownames(cells.spikein))
 
-cn_bin.spikein <- cn_df.comb %>%
-  filter(ID_clean %in% spikein_ids, chrom_name == spikein.chrom)
-
-cn_bin.nonspikein <- cn_df.comb %>%
-  filter(!ID_clean %in% spikein_ids)
-
-cn_bin.spikein.false <- cn_df.comb %>%
-  filter(!ID_clean %in% spikein_ids, cn_state_final != 2) %>%
-  group_by(ID_clean, chrom_name) %>%
-  summarise(n = n(), .groups = "drop")
-
-print(
-  cn_bin.spikein %>%
-    dplyr::count(cn_state_adj, name = "n_spikein_segments")
-)
-print(
-  cn_bin.nonspikein %>%
-    dplyr::count(cn_state_adj, name = "n_nonspikein_segments")
-)
-print(head(cn_bin.spikein.false, 10))
 
 cn_df.plot <- cn_df.comb %>%
   mutate(
@@ -200,20 +228,21 @@ cn_df.plot <- cn_df.comb %>%
 cn_bin.wide <- cn_df.plot %>%
   select(ID_plot, chrom_bin, cn_state_final) %>%
   distinct() %>%
-  pivot_wider(names_from = chrom_bin, values_from = cn_state_final)
-
-cn_bin.wide <- as.data.frame(cn_bin.wide)
+  pivot_wider(names_from = chrom_bin, values_from = cn_state_final) %>% 
+  as.data.frame()
 rownames(cn_bin.wide) <- cn_bin.wide$ID_plot
 cn_bin.wide$ID_plot <- NULL
 
+# organize bins by chromosome and position
 bin_df <- data.frame(chrom_bin = colnames(cn_bin.wide), stringsAsFactors = FALSE)
-bin_df[, c("chr", "start", "end")] <- str_split_fixed(bin_df$chrom_bin, "_", 3)
+bin_df[, c("chr", "start", "end")] <- stringr::str_split_fixed(bin_df$chrom_bin, "_", 3)
 bin_df$chr <- factor(bin_df$chr, levels = chromosomes)
 bin_df$start <- as.numeric(bin_df$start)
-bin_df <- bin_df %>% arrange(chr, start)
+bin_df <- bin_df %>% dplyr::arrange(chr, start)
 bin_df$order <- seq_len(nrow(bin_df))
-bin_df_break <- bin_df %>% group_by(chr) %>% summarise(max_order = max(order), .groups = "drop")
+bin_df_break <- bin_df %>% dplyr::group_by(chr) %>% dplyr::summarise(max_order = max(order), .groups = "drop")
 
+# re-arrange columns in cn_bin.wide according to bin_df
 cn_bin.wide <- cn_bin.wide[, bin_df$chrom_bin, drop = FALSE]
 cn_bin.wide <- pmin(as.matrix(cn_bin.wide), 4)
 

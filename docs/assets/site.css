@@ -1,0 +1,157 @@
+:root {
+  --bg: #f2efe8;
+  --paper: #fbf8f2;
+  --ink: #201c18;
+  --muted: #6b655d;
+  --accent: #8f392c;
+  --accent-dark: #6e251b;
+  --line: #d9d2c6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top right, #e8dcc7 0, transparent 25%),
+    linear-gradient(180deg, #f8f4ee 0%, var(--bg) 100%);
+}
+
+.page {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 48px 24px 72px;
+}
+
+.hero,
+.panel {
+  background: rgba(251, 248, 242, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  box-shadow: 0 18px 38px rgba(59, 39, 16, 0.08);
+}
+
+.hero {
+  padding: 36px 32px;
+}
+
+.panel {
+  padding: 28px 24px;
+  margin-top: 22px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-size: 0.82rem;
+}
+
+h1,
+h2,
+h3 {
+  margin-top: 0;
+  line-height: 1.1;
+}
+
+h1 {
+  font-size: clamp(2.4rem, 4.8vw, 4.4rem);
+  max-width: 12ch;
+  margin-bottom: 16px;
+}
+
+h2 {
+  font-size: 1.7rem;
+  margin-bottom: 14px;
+}
+
+h3 {
+  font-size: 1.15rem;
+  margin-bottom: 8px;
+}
+
+p,
+li {
+  font-size: 1.04rem;
+  line-height: 1.65;
+}
+
+.lede {
+  max-width: 50rem;
+  color: var(--muted);
+  font-size: 1.16rem;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.button,
+.text-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.button {
+  display: inline-block;
+  padding: 12px 18px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fffaf6;
+  font-weight: 600;
+}
+
+.button:hover {
+  background: var(--accent-dark);
+}
+
+.button-secondary {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--line);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.grid article {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.steps {
+  margin: 0;
+  padding-left: 22px;
+}
+
+code {
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 0.95em;
+  background: #efe6da;
+  border-radius: 4px;
+  padding: 0.12rem 0.3rem;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 24px 16px 48px;
+  }
+
+  .hero,
+  .panel {
+    padding: 22px 18px;
+  }
+}

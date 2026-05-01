@@ -16,6 +16,24 @@ test_that("normalize_depth centers by beta_i_hat", {
   expect_lt(max(abs(center_diff - chrom_depth$read_depth_sqrt_centered)), 1e-10)
 })
 
+test_that("normalize_depth reorders bins by chromosome and position", {
+  bins <- c("chr2_101_200_p", "chr1_201_300_q", "chr1_1_100_p")
+  df.depth <- data.frame(
+    barcode = "cell1",
+    chr2_101_200_p = 30,
+    chr1_201_300_q = 20,
+    chr1_1_100_p = 10,
+    stringsAsFactors = FALSE
+  )
+
+  chrom_depth <- normalize_depth(df.depth, bins, chromosomes = c("chr1", "chr2"))
+
+  expect_equal(
+    chrom_depth$bin,
+    c("chr1_1_100_p", "chr1_201_300_q", "chr2_101_200_p")
+  )
+})
+
 test_that("wavelet_transform returns consistent dimensions", {
   bins <- c("chr1_1_100_p", "chr1_101_200_p", "chr1_201_300_q", "chr1_301_400_q")
   df.depth <- data.frame(

@@ -79,8 +79,11 @@ setwd('/Users/emiliac/Documents/Rotations/Zhang_lab/Projects/scATACcnv/package')
 package_root <- resolve_package_root()
 load_chasm(package_root)
 
+# ==============================================================================
+# Read input data
+# ==============================================================================
 chromosomes <- paste0("chr", c(1:22, "X", "Y"))
-sample_name <- "1-27Nx_peakfrag_cov_5mb"
+sample_name <- "GSM8403676_P17_peakfrag_cov_2mb"
 wavelet_file <- paste0(sample_name, ".rds")
 chrom_file <- paste0(sample_name, "_chrom.rds")
 
@@ -94,8 +97,12 @@ dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
 wavelet_path <- example_data_path(wavelet_file)
 chrom_path <- example_data_path(chrom_file)
 
-message("Reading bundled 1-27Nx binned read-depth matrix: ", wavelet_path)
+message("Reading bundled binned read-depth matrix: ", wavelet_path)
 read.depth <- readRDS(wavelet_path)
+
+# ==============================================================================
+# Prepare input
+# ==============================================================================
 original_wavelet_ids <- rownames(read.depth)
 sanitized_wavelet_ids <- sanitize_cell_ids(original_wavelet_ids)
 wavelet_id_map <- data.frame(
@@ -110,10 +117,13 @@ bins <- setdiff(colnames(read.depth), "barcode")
 chrom_bins <- bins[grepl("^chr", bins)]
 ki_gl_bins <- bins[grepl("^(KI|GL)", bins)]
 bins <- setdiff(chrom_bins, ki_gl_bins)
-read.depth <- read.depth[, c(bins, "barcode")]
+
+# ==============================================================================
+# Normalize and compute cell-specific control
+# ==============================================================================
 
 message("Normalizing read depth with wavelet transform and robust PCA...")
-chrom.depth.per.cell <- normalize_depth(read.depth, bins)
+chrom.depth.per.cell <- normalize_depth(read.depth, bins, chromosomes)
 wavelet.transform <- wavelet_transform(chrom.depth.per.cell, bins, chromosomes)
 robust.pca <- robust_pca(wavelet.transform$mat.wavelet.transform)
 
@@ -129,8 +139,16 @@ svd.normalized.read.depth.mat <- inv_wavelet_transform(
 colnames(residuals.mat) <- rownames(wavelet.transform$mat.wavelet.transform)
 colnames(svd.normalized.read.depth.mat) <- rownames(wavelet.transform$mat.wavelet.transform)
 
+# ==============================================================================
+# Segmentation
+# ==============================================================================
+
 message("Segmenting residuals...")
-segment.table <- segment_residuals(residuals.mat, alpha = 0.005)
+segment.table <- segment_residuals(residuals.mat, alpha = 0.01)
+
+# ==============================================================================
+# Assign copy number states
+# ==============================================================================
 
 message("Assigning segment-level copy-number states...")
 cn_wavelet <- assign_cn_state(
@@ -149,21 +167,40 @@ wavelet_output_path <- file.path(output_root, paste0(sample_name, "_output_wavel
 saveRDS(wavelet_output, file = wavelet_output_path)
 message("Saved wavelet output to: ", wavelet_output_path)
 
-message("Reading bundled 1-27Nx chromosome-level matrix: ", chrom_path)
+# ==============================================================================
+# Read input data for chromosomal level analysis
+# ==============================================================================
+
+message("Reading bundled chromosome-level matrix: ", chrom_path)
 read.depth.chrom <- readRDS(chrom_path)
 positions <- colnames(read.depth.chrom)
 positions <- positions[grepl("^chr", positions)]
 
-# Prefix chromosome-level barcodes so they match the wavelet-layer cell IDs.
+# ==============================================================================
+# Prepare input
+# ==============================================================================
 
+# Prefix chromosome-level barcodes so they match the wavelet-layer cell IDs.
 read.depth.chrom$ID <- sanitize_cell_ids(rownames(read.depth.chrom))
 rownames(read.depth.chrom) <- read.depth.chrom$ID
 
+# ==============================================================================
+# Chromosomal level copy number state assignment
+# ==============================================================================
 message("Assigning chromosome-level copy-number states...")
 cn_state.nb <- assign_cn_state.chrom(read.depth.chrom, positions)
 
+# ==============================================================================
+# Combine segment-level and chromosome-level results
+# ==============================================================================
+
 message("Combining segment-level and chromosome-level results...")
 cn_df.comb <- merge_calls(cn_wavelet, cn_state.nb)
+
+# ==============================================================================
+# Post-processing and save results
+# ==============================================================================
+
 cn_df.comb <- merge(cn_df.comb, wavelet_id_map, by = "ID", all.x = TRUE, sort = FALSE)
 cn_df.comb$ID <- ifelse(is.na(cn_df.comb$ID_original), cn_df.comb$ID, cn_df.comb$ID_original)
 cn_df.comb$ID_original <- NULL

@@ -1,0 +1,200 @@
+---
+title: "CHASM Example Full Pipeline"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{CHASM Example Full Pipeline}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 12,
+  fig.height = 8,
+  eval = FALSE
+)
+
+find_package_root <- function(path) {
+  current <- normalizePath(path, winslash = "/", mustWork = FALSE)
+
+  repeat {
+    description_path <- file.path(current, "DESCRIPTION")
+    if (file.exists(description_path)) {
+      return(current)
+    }
+
+    parent <- dirname(current)
+    if (identical(parent, current)) {
+      return(NULL)
+    }
+    current <- parent
+  }
+}
+
+package_root <- find_package_root(getwd())
+if (is.null(package_root)) {
+  package_root <- find_package_root(dirname(knitr::current_input()))
+}
+
+if (!is.null(package_root) && requireNamespace("pkgload", quietly = TRUE)) {
+  pkgload::load_all(package_root, export_all = FALSE, quiet = TRUE)
+} else if (requireNamespace("CHASM", quietly = TRUE)) {
+  suppressPackageStartupMessages(library(CHASM))
+} else {
+  stop("CHASM is not installed and pkgload is unavailable.")
+}
+
+resolve_vignette_example <- function(file_name) {
+  if (!is.null(package_root)) {
+    source_path <- file.path(package_root, "inst", "extdata", file_name)
+    if (file.exists(source_path)) {
+      return(source_path)
+    }
+  }
+
+  example_data_path(file_name)
+}
+```
+
+This tutorial walks through the bundled end-to-end CHASM example using the
+packaged example data. It mirrors the logic in
+`tutorial/run_chasm_example_full_pipeline.R`, and uses a cached heatmap input
+object so the final heatmap can be rendered from executed plotting code during
+vignette build without rerunning the full pipeline.
+
+```{r packages}
+if (!requireNamespace("dplyr", quietly = TRUE) ||
+    !requireNamespace("tidyr", quietly = TRUE) ||
+    !requireNamespace("stringr", quietly = TRUE) ||
+    !requireNamespace("rsvd", quietly = TRUE) ||
+    !requireNamespace("pheatmap", quietly = TRUE)) {
+  stop(
+    "This vignette requires dplyr, tidyr, stringr, rsvd, and pheatmap."
+  )
+}
+```
+
+## Load bundled example data
+
+```{r input-data}
+sanitize_cell_ids <- function(x) {
+  getFromNamespace("normalize_dnacopy_ids", "CHASM")(x)
+}
+
+chromosomes <- paste0("chr", c(1:22, "X", "Y"))
+
+read_depth_file <- "Read_depth_matrix_chr1_50mb_2_5pct_Rep1.rds"
+read_depth_chrom_file <- sub("\\.rds$", "_chrom.rds", read_depth_file)
+spikein_cells_file <- "read_depth_spikein_cells_2mb_ALL.rds"
+
+sample_name <- sub("^Read_depth_matrix_", "", sub("\\.rds$", "", read_depth_file))
+
+read.depth <- readRDS(example_data_path(read_depth_file))
+read.depth.chrom <- readRDS(example_data_path(read_depth_chrom_file))
+cells.spikein <- readRDS(example_data_path(spikein_cells_file))
+```
+
+## Prepare the binned read-depth matrix
+
+```{r prepare-wavelet-input}
+rownames(read.depth) <- sanitize_cell_ids(rownames(read.depth))
+read.depth$barcode <- rownames(read.depth)
+
+bins <- setdiff(colnames(read.depth), "barcode")
+chrom_bins <- bins[grepl("^chr", bins)]
+ki_gl_bins <- bins[grepl("^(KI|GL)", bins)]
+bins <- setdiff(chrom_bins, ki_gl_bins)
+read.depth <- read.depth[, c(bins, "barcode")]
+```
+
+## Normalize and denoise with the wavelet workflow
+
+```{r wavelet-workflow}
+chrom.depth.per.cell <- normalize_depth(read.depth, bins)
+wavelet.transform <- wavelet_transform(chrom.depth.per.cell, bins)
+robust.pca <- robust_pca(wavelet.transform$mat.wavelet.transform)
+
+residuals.mat <- inv_wavelet_transform(
+  robust.pca$Sparse_Signal,
+  wavelet.transform$chrom.informed.wavelet
+)
+svd.normalized.read.depth.mat <- inv_wavelet_transform(
+  robust.pca$Expected_Normal,
+  wavelet.transform$chrom.informed.wavelet
+)
+
+colnames(residuals.mat) <- rownames(wavelet.transform$mat.wavelet.transform)
+colnames(svd.normalized.read.depth.mat) <- rownames(wavelet.transform$mat.wavelet.transform)
+```
+
+## Segment residual signal and assign bin-level copy-number states
+
+```{r segment-and-assign}
+segment.table <- segment_residuals(residuals.mat, alpha = 0.005)
+cn_bin <- assign_cn_state(chrom.depth.per.cell, svd.normalized.read.depth.mat, segment.table)
+```
+
+## Run chromosome-level state assignment
+
+```{r chromosome-level}
+positions <- colnames(read.depth.chrom)
+read.depth.chrom$ID <- sanitize_cell_ids(rownames(read.depth.chrom))
+read.depth.chrom$celltype <- "unknown"
+rownames(read.depth.chrom) <- read.depth.chrom$ID
+
+cn_state.nb <- assign_cn_state.chrom(read.depth.chrom, positions)
+```
+
+## Merge segment-level and chromosome-level calls
+
+```{r merge-calls}
+cn_df.comb <- merge_calls(cn_bin, cn_state.nb)
+cn_df.comb$ID_clean <- sanitize_cell_ids(cn_df.comb$ID)
+cn_df.comb$chrom_name <- stringr::str_split_fixed(cn_df.comb$chrom_bin, "_", 3)[, 1]
+```
+
+## Prepare the heatmap matrix
+
+```{r heatmap-matrix, eval = TRUE}
+heatmap_input <- readRDS(resolve_vignette_example("chasm_vignette_heatmap_input.rds"))
+cn_bin.wide <- heatmap_input$cn_bin.wide
+annotation_row <- heatmap_input$annotation_row
+bin_df_break <- heatmap_input$bin_df_break
+```
+
+## Plot the example heatmap
+
+```{r heatmap, echo = TRUE, eval = TRUE, fig.width=5, fig.height=5}
+pheatmap::pheatmap(
+  cn_bin.wide,
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  show_rownames = FALSE,
+  show_colnames = FALSE,
+  annotation_row = annotation_row,
+  annotation_colors = list(Spike_in = c(Yes = "red", No = "blue")),
+  gaps_col = bin_df_break$max_order,
+  gaps_row = sum(annotation_row$Spike_in == "Yes")
+)
+```
+
+## Save outputs if needed
+
+The original script writes intermediate and final objects to disk. For an
+interactive tutorial page, it is usually cleaner to leave the outputs in the
+session, but the same objects are available if you want to save them:
+
+```{r save-outputs, eval = FALSE}
+wavelet_output <- list(
+  cn_bin = cn_bin,
+  segment.table = segment.table,
+  chrom.depth.per.cell = chrom.depth.per.cell,
+  residuals.mat = residuals.mat
+)
+
+# saveRDS(wavelet_output, paste0(sample_name, "_output_wavelet.rds"))
+# saveRDS(cn_df.comb, paste0(sample_name, "_output_cn_df.comb.rds"))
+# write.csv(cn_df.comb, paste0(sample_name, "_example_cn_calls.csv"), row.names = FALSE)
+```

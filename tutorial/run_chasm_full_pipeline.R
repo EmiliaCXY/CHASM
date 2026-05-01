@@ -189,29 +189,29 @@ rownames(read.depth.chrom) <- read.depth.chrom$ID
 cn_state.nb <- assign_cn_state.chrom(read.depth.chrom, positions)
 
 message("Combining segment-level and chromosome-level results...")
-merge_calls <- function(cn_wavelet, cn_nb) {
-  cn_nb$ID <- sub("\\+", "-", cn_nb$ID)
-  cn_merged <- merge(
-    cn_wavelet,
-    cn_nb,
-    by.x = c("ID", "chrom_name"),
-    by.y = c("ID", "chrom"),
-    suffixes = c("_wl", "_nb")
-  )
-  
-  cn_merged$cn_state_final <- ifelse(
-    cn_merged$called_cna == "YES" & !is.na(cn_merged$p_value_adj_wl),
-    cn_merged$cn_state_binom,
-    ifelse(
-      cn_merged$called_cna == "NO" & !is.na(cn_merged$p_value_adj_wl) & cn_merged$p_value_adj_wl < 0.05,
-      2,
-      cn_merged$cn_state_adj
-    )
-  )
-  cn_merged$cn_state_final <- round(cn_merged$cn_state_final, 0)
-  
-  cn_merged
-}
+# merge_calls <- function(cn_wavelet, cn_nb) {
+#   cn_nb$ID <- sub("\\+", "-", cn_nb$ID)
+#   cn_merged <- merge(
+#     cn_wavelet,
+#     cn_nb,
+#     by.x = c("ID", "chrom_name"),
+#     by.y = c("ID", "chrom"),
+#     suffixes = c("_wl", "_nb")
+#   )
+#   
+#   cn_merged$cn_state_final <- ifelse(
+#     cn_merged$called_cna == "YES" & !is.na(cn_merged$p_value_adj_wl),
+#     cn_merged$cn_state_binom,
+#     ifelse(
+#       cn_merged$called_cna == "NO" & !is.na(cn_merged$p_value_adj_wl) & cn_merged$p_value_adj_wl < 0.05,
+#       2,
+#       cn_merged$cn_state_adj
+#     )
+#   )
+#   cn_merged$cn_state_final <- round(cn_merged$cn_state_final, 0)
+#   
+#   cn_merged
+# }
 cn_df.comb <- merge_calls(cn_bin, cn_state.nb)
 
 combined_output_path <- file.path(output_root, paste0(sample_name, "_output_cn_df.comb.rds"))
