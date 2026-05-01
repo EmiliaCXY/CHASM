@@ -9,6 +9,14 @@
 #' @return A merged data frame containing both call sets and a final
 #'   `cn_state_final` column.
 merge_calls <- function(cn_wavelet, cn_nb) {
+  cn_state_col <- if ("cn_state_adj_wl" %in% colnames(cn_wavelet)) {
+    "cn_state_adj_wl"
+  } else if ("cn_state_adj" %in% colnames(cn_wavelet)) {
+    "cn_state_adj"
+  } else {
+    stop("merge_calls: cn_wavelet must contain 'cn_state_adj' or 'cn_state_adj_wl'.")
+  }
+
   cn_nb$ID <- sub("\\+", "-", cn_nb$ID)
   cn_merged <- merge(
     cn_wavelet,
@@ -22,12 +30,13 @@ merge_calls <- function(cn_wavelet, cn_nb) {
     cn_merged$called_cna == "YES" & !is.na(cn_merged$p_value_adj_wl),
     cn_merged$cn_state_binom,
     ifelse(
-      cn_merged$called_cna == "NO" & !is.na(cn_merged$p_value_adj_wl) & cn_merged$p_value_adj_wl < 0.05,
-      2,
-      cn_merged$cn_state_adj_wl
+    cn_merged$called_cna == "NO" & !is.na(cn_merged$p_value_adj_wl) & cn_merged$p_value_adj_wl < 0.05,
+    2,
+      cn_merged[[cn_state_col]]
     )
   )
   cn_merged$cn_state_final <- round(cn_merged$cn_state_final, 0)
-
+  
+  cn_merged <- cn_merged %>% dplyr::select(ID, chrom_bin, variable, segment_id, cn_state_final)
   cn_merged
 }

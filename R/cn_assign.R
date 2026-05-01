@@ -123,7 +123,7 @@ construct_segment_to_bin_dictionary <- function(segment_table, bins) {
     segment_bin_map$start_output, "_",
     segment_bin_map$end_output
   )
-  segment_bin_map$ID <- gsub("\\.", "-", segment_bin_map$ID)
+  # segment_bin_map$ID <- gsub("\\.", "-", segment_bin_map$ID)
 
   segment_bin_map
 }

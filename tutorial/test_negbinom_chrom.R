@@ -78,6 +78,10 @@ suppressPackageStartupMessages({
   library(dplyr)
 })
 
+sanitize_cell_ids <- function(x) {
+  getFromNamespace("normalize_dnacopy_ids", "CHASM")(x)
+}
+
 # Update these parameters for the manual dataset you want to evaluate.
 spikein.chrom <- "chr1"
 spikein.size <- "full"
@@ -105,7 +109,7 @@ message("Reading chromosome-level read-depth matrix: ", read_depth_chrom_path)
 read.depth.chrom <- read.csv(read_depth_chrom_path, row.names = 1, check.names = FALSE)
 positions <- colnames(read.depth.chrom)
 
-read.depth.chrom$ID <- rownames(read.depth.chrom)
+read.depth.chrom$ID <- sanitize_cell_ids(rownames(read.depth.chrom))
 read.depth.chrom$celltype <- "unknown"
 rownames(read.depth.chrom) <- read.depth.chrom$ID
 

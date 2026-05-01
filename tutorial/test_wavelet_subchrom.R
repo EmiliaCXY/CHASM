@@ -113,14 +113,12 @@ spikein_cells_path <- file.path(
 )
 
 sanitize_cell_ids <- function(x) {
-  x <- sub("X", "_", x)
-  x <- sub("X", "-", x)
-  x <- sub("\\+", "-", x)
-  x
+  getFromNamespace("normalize_dnacopy_ids", "CHASM")(x)
 }
 
 message("Reading read-depth matrix: ", read_depth_path)
 read.depth <- read.csv(read_depth_path, row.names = 1, check.names = FALSE)
+rownames(read.depth) <- sanitize_cell_ids(rownames(read.depth))
 read.depth$barcode <- rownames(read.depth)
 
 bins <- setdiff(colnames(read.depth), "barcode")
@@ -160,7 +158,7 @@ cn_bin$ID_clean <- sanitize_cell_ids(cn_bin$ID)
 if (file.exists(spikein_cells_path)) {
   message("Reading spike-in cell annotations: ", spikein_cells_path)
   cells.spikein <- read.csv(spikein_cells_path, row.names = 1, check.names = FALSE)
-  spikein_ids <- rownames(cells.spikein)
+  spikein_ids <- sanitize_cell_ids(rownames(cells.spikein))
 
   cn_bin.spikein <- cn_bin %>%
     filter(ID_clean %in% spikein_ids, chrom_name == spikein.chrom)

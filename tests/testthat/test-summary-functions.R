@@ -30,7 +30,8 @@ test_that("summarize_genome_altered accepts external bin_ids and cn_state_adj", 
 
   summary_df <- summarize_genome_altered(
     cn_calls,
-    bin_ids = c("chr2_1_50_p", "chr2_51_100_q")
+    bin_ids = c("chr2_1_50_p", "chr2_51_100_q"),
+    cn_state_col = "cn_state_adj"
   )
 
   expect_equal(summary_df$altered_length, c(50, 0))
@@ -68,16 +69,20 @@ test_that("list_example_data returns bundled example files", {
   expect_true(is.character(example_files))
   expect_true("Read_depth_matrix_chr1_full_2_5pct_Rep1.rds" %in% example_files)
   expect_true("1-27Nx_peakfrag_cov_5mb_chrom.rds" %in% example_files)
+  expect_true("read_depth_spikein_cells_2mb_ALL.rds" %in% example_files)
 })
 
 test_that("example_data_path resolves bundled example files", {
   example_rds <- example_data_path("Read_depth_matrix_chr1_full_2_5pct_Rep1.rds")
   kidney_rds <- example_data_path("1-27Nx_peakfrag_cov_5mb.rds")
+  spikein_rds <- example_data_path("read_depth_spikein_cells_2mb_ALL.rds")
 
   expect_true(file.exists(example_rds))
   expect_equal(basename(example_rds), "Read_depth_matrix_chr1_full_2_5pct_Rep1.rds")
   expect_true(file.exists(kidney_rds))
   expect_equal(basename(kidney_rds), "1-27Nx_peakfrag_cov_5mb.rds")
+  expect_true(file.exists(spikein_rds))
+  expect_equal(basename(spikein_rds), "read_depth_spikein_cells_2mb_ALL.rds")
 })
 
 test_that("example_read_depth_path returns the bundled example RDS", {

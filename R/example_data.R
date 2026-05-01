@@ -7,7 +7,8 @@
     "Read_depth_matrix_chr1_full_2_5pct_Rep1.rds",
     "Read_depth_matrix_chr1_full_2_5pct_Rep1_chrom.rds",
     "Read_depth_matrix_chr1_p_2_5pct_Rep1.rds",
-    "Read_depth_matrix_chr1_p_2_5pct_Rep1_chrom.rds"
+    "Read_depth_matrix_chr1_p_2_5pct_Rep1_chrom.rds",
+    "read_depth_spikein_cells_2mb_ALL.rds"
   )
 }
 

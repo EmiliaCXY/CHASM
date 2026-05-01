@@ -57,13 +57,13 @@ load_chasm <- function() {
     )
   }
 
-  if (requireNamespace("CHASM", quietly = TRUE)) {
-    suppressPackageStartupMessages(library(CHASM))
+  if (requireNamespace("pkgload", quietly = TRUE)) {
+    pkgload::load_all(package_root, export_all = FALSE, quiet = TRUE)
     return(invisible(TRUE))
   }
 
-  if (requireNamespace("pkgload", quietly = TRUE)) {
-    pkgload::load_all(package_root, export_all = FALSE, quiet = TRUE)
+  if (requireNamespace("CHASM", quietly = TRUE)) {
+    suppressPackageStartupMessages(library(CHASM))
     return(invisible(TRUE))
   }
 
@@ -115,10 +115,7 @@ spikein_cells_path <- file.path(
 )
 
 sanitize_cell_ids <- function(x) {
-  x <- sub("X", "_", x)
-  x <- sub("X", "-", x)
-  x <- sub("\\+", "-", x)
-  x
+  getFromNamespace("normalize_dnacopy_ids", "CHASM")(x)
 }
 
 read_depth_path <- file.path(
@@ -131,6 +128,7 @@ read_depth_path <- file.path(
 
 message("Reading read-depth matrix: ", read_depth_path)
 read.depth <- read.csv(read_depth_path, row.names = 1, check.names = FALSE)
+rownames(read.depth) <- sanitize_cell_ids(rownames(read.depth))
 read.depth$barcode <- rownames(read.depth)
 
 bins <- setdiff(colnames(read.depth), "barcode")
@@ -157,7 +155,7 @@ svd.normalized.read.depth.mat <- inv_wavelet_transform(
 message("Segmenting residuals...")
 colnames(residuals.mat) <- rownames(wavelet.transform$mat.wavelet.transform)
 colnames(svd.normalized.read.depth.mat) <- rownames(wavelet.transform$mat.wavelet.transform)
-segment.table <- segment_residuals(residuals.mat, alpha = 0.001)
+segment.table <- segment_residuals(residuals.mat, alpha = 0.005)
 
 message("Assigning copy number states...")
 cn_bin <- assign_cn_state(chrom.depth.per.cell, svd.normalized.read.depth.mat, segment.table)
@@ -184,7 +182,7 @@ read_depth_chrom_path <- file.path(
 message("Reading chromosome-level read-depth matrix: ", read_depth_chrom_path)
 read.depth.chrom <- read.csv(read_depth_chrom_path, row.names = 1, check.names = FALSE)
 positions <- colnames(read.depth.chrom)
-read.depth.chrom$ID <- rownames(read.depth.chrom)
+read.depth.chrom$ID <- sanitize_cell_ids(rownames(read.depth.chrom))
 read.depth.chrom$celltype <- "unknown"
 rownames(read.depth.chrom) <- read.depth.chrom$ID
 
@@ -220,21 +218,21 @@ combined_output_path <- file.path(output_root, paste0(sample_name, "_output_cn_d
 # saveRDS(cn_df.comb, file = combined_output_path)
 message("Saved combined CN calls to: ", combined_output_path)
 
-cn_bin$ID_clean <- sanitize_cell_ids(cn_bin$ID)
+cn_df.comb$ID_clean <- sanitize_cell_ids(cn_df.comb$ID)
 
 if (file.exists(spikein_cells_path)) {
   message("Reading spike-in cell annotations: ", spikein_cells_path)
   cells.spikein <- read.csv(spikein_cells_path, row.names = 1, check.names = FALSE)
-  spikein_ids <- rownames(cells.spikein)
+  spikein_ids <- sanitize_cell_ids(rownames(cells.spikein))
 
-  cn_bin.spikein <- cn_bin %>%
+  cn_bin.spikein <- cn_df.comb %>%
     filter(ID_clean %in% spikein_ids, chrom_name == spikein.chrom)
 
-  cn_bin.nonspikein <- cn_bin %>%
+  cn_bin.nonspikein <- cn_df.comb %>%
     filter(!ID_clean %in% spikein_ids)
 
-  cn_bin.spikein.false <- cn_bin %>%
-    filter(!ID_clean %in% spikein_ids, cn_state_adj != 2) %>%
+  cn_bin.spikein.false <- cn_df.comb %>%
+    filter(!ID_clean %in% spikein_ids, cn_state_final != 2) %>%
     group_by(ID_clean, chrom_name) %>%
     summarise(n = n(), .groups = "drop")
 
@@ -248,11 +246,11 @@ if (file.exists(spikein_cells_path)) {
   )
   print(head(cn_bin.spikein.false, 10))
 
-  cn_bin.wide <- cn_bin %>%
+  cn_bin.wide <- cn_df.comb %>%
     mutate(ID_plot = ID_clean) %>%
     ungroup() %>%
-    select(ID_plot, chrom_bin, cn_state_adj) %>%
-    pivot_wider(names_from = chrom_bin, values_from = cn_state_adj)
+    select(ID_plot, chrom_bin, cn_state_final) %>%
+    pivot_wider(names_from = chrom_bin, values_from = cn_state_final)
 
   cn_bin.wide <- as.data.frame(cn_bin.wide)
   rownames(cn_bin.wide) <- cn_bin.wide$ID_plot

@@ -1,3 +1,7 @@
+normalize_dnacopy_ids <- function(x) {
+  make.names(x, unique = FALSE)
+}
+
 #' Quantify the percentage of the genome with altered copy-number calls
 #'
 #' Summarizes per-cell copy-number output into the total altered genomic length
@@ -23,7 +27,7 @@ summarize_genome_altered <- function(
   bin_ids = NULL,
   id_col = "ID",
   segment_col = "segment_id",
-  cn_state_col = NULL,
+  cn_state_col = "cn_state_final",
   diploid_state = 2
 ) {
   if (!is.data.frame(cn_calls)) {
