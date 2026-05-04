@@ -5,14 +5,14 @@ functions from the `scATACcnv` project into reusable R functions.
 
 ## Installation
 
-Install the required R packages:
+Install the required CRAN packages:
 
 ```r
 install.packages(c(
   "DNAcopy",
   "dplyr",
-  "GenomicRanges",
   "magrittr",
+  "remotes",
   "stringr",
   "tidyr",
   "wavethresh",
@@ -20,16 +20,31 @@ install.packages(c(
 ))
 ```
 
-Then install `CHASM` from the package directory:
+Install the Bioconductor dependency:
 
 ```r
-install.packages("/path/to/scATACcnv/package", repos = NULL, type = "source")
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+  install.packages("BiocManager")
+}
+BiocManager::install("GenomicRanges")
+```
+
+Then install `CHASM` from GitHub:
+
+```r
+remotes::install_github("EmiliaCXY/CHASM")
+```
+
+To install from a local checkout instead:
+
+```r
+install.packages("/path/to/CHASM/package", repos = NULL, type = "source")
 ```
 
 For development use, you can load the package without installing it:
 
 ```r
-pkgload::load_all("/path/to/scATACcnv/package")
+pkgload::load_all("/path/to/CHASM/package")
 ```
 
 ## Example Data
