@@ -30,7 +30,7 @@ merge_calls <- function(cn_wavelet, cn_nb) {
     cn_merged$called_cna == "YES" & !is.na(cn_merged$p_value_adj_wl),
     cn_merged$cn_state_binom,
     ifelse(
-    cn_merged$called_cna == "NO" & !is.na(cn_merged$p_value_adj_wl) & cn_merged$p_value_adj_wl < 0.05,
+    cn_merged$called_cna == "NO" & !is.na(cn_merged$p_value_adj_wl),
     2,
       cn_merged[[cn_state_col]]
     )

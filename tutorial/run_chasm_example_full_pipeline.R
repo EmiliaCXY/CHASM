@@ -154,6 +154,7 @@ colnames(svd.normalized.read.depth.mat) <- wavelet.transform$bin.info.padded
 message("Segmenting residuals...")
 segment.table <- segment_residuals(residuals.mat, alpha = 0.001)
 
+
 # ==============================================================================
 # Assign copy number states
 # ==============================================================================
