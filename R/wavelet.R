@@ -179,8 +179,8 @@ pad_read_depth_matrix_for_wavelet <- function(centered_depth_matrix, bin_info, a
 #' @param chromosomes Character vector giving the chromosome order to apply
 #'   before building the wavelet basis.
 #'
-#' @return A list with the transformed matrix (`mat.wavelet.transform`) and the
-#'   chromosome-informed wavelet basis (`chrom.informed.wavelet`).
+#' @return A list with the transformed matrix (`mat.wavelet.transform`), the
+#'   chromosome-informed wavelet basis (`chrom.informed.wavelet`), and the bin indices (`bin.info.padded`)
 wavelet_transform <- function(chrom_depth_per_cell, bins, chromosomes = paste0("chr", c(1:22, "X", "Y"))) {
   if (!all(c("barcode", "bin", "read_depth_sqrt_centered") %in% colnames(chrom_depth_per_cell))) {
     stop("wavelet_transform: chrom_depth_per_cell must contain 'barcode', 'bin', 'read_depth_sqrt_centered'.")
@@ -235,11 +235,12 @@ wavelet_transform <- function(chrom_depth_per_cell, bins, chromosomes = paste0("
   message("Performing wavelet transform on read depth matrix...")
 
   transformed_matrix <- wavelet_matrix %*% padded_depth_transposed
-  rownames(transformed_matrix) <- rownames(padded_depth_transposed)
+  # rownames(transformed_matrix) <- rownames(padded_depth_transposed)
 
   list(
     mat.wavelet.transform = transformed_matrix,
-    chrom.informed.wavelet = wavelet_matrix
+    chrom.informed.wavelet = wavelet_matrix,
+    bin.info.padded = rownames(padded_depth_transposed)
   )
 }
 

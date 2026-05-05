@@ -1,10 +1,6 @@
 .example_data_files <- function() {
   c(
-    "1-27Nx_peakfrag_cov_5mb.rds",
-    "1-27Nx_peakfrag_cov_5mb_chrom.rds",
     "chasm_vignette_heatmap_input.rds",
-    "GSM8403676_P17_peakfrag_cov_2mb.rds",
-    "GSM8403676_P17_peakfrag_cov_2mb_chrom.rds",
     "Read_depth_matrix_chr1_50mb_2_5pct_Rep1.rds",
     "Read_depth_matrix_chr1_50mb_2_5pct_Rep1_chrom.rds",
     "Read_depth_matrix_chr1_full_2_5pct_Rep1.rds",
