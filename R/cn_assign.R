@@ -202,19 +202,8 @@ construct_cn_calls_by_segment_type <- function(counts_with_segments) {
       weight = expected_count / total_in_group,
       cn_state_raw = sum(bin_cn * weight),
       cn_state_adj = round(cn_state_raw, 0),
-      p_value = if (dplyr::n() >= 3) {
-        stats::wilcox.test(expected_count, observed_count, paired = TRUE)$p.value
-      } else {
-        NA_real_
-      }
+      indicator = 'single_segment'
     )
-
-  cn_calls_single_segment$p_value_adj <- stats::p.adjust(cn_calls_single_segment$p_value, method = "BH")
-  cn_calls_single_segment$cn_state_adj <- ifelse(
-    cn_calls_single_segment$p_value_adj >= 0.05 & cn_calls_single_segment$cn_state_adj != 2,
-    2,
-    cn_calls_single_segment$cn_state_adj
-  )
 
   cn_calls_multi_segment <- multi_segment_counts %>%
     dplyr::group_by(ID, segment_id) %>%
@@ -224,8 +213,7 @@ construct_cn_calls_by_segment_type <- function(counts_with_segments) {
       cn_state_raw = sum(bin_cn * weight),
       cn_state_adj = round(cn_state_raw, 0)
     )
-  cn_calls_multi_segment$p_value <- NA_real_
-  cn_calls_multi_segment$p_value_adj <- NA_real_
+  cn_calls_multi_segment$indicator <- 'multi_segment'
 
   rbind(cn_calls_single_segment, cn_calls_multi_segment)
 }

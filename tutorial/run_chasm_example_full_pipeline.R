@@ -1,6 +1,8 @@
 rm(list = ls())
 options(scipen = 999)
 
+setwd('/Users/emiliac/Documents/Rotations/Zhang_lab/Projects/scATACcnv/package/')
+
 find_package_root <- function(path) {
   current <- normalizePath(path, winslash = "/", mustWork = FALSE)
 
@@ -75,7 +77,6 @@ sanitize_cell_ids <- function(x) {
 }
 
 package_root <- resolve_package_root()
-setwd('/Users/emiliac/Documents/Rotations/Zhang_lab/Projects/scATACcnv/package/')
 load_chasm(package_root)
 
 # ==============================================================================
@@ -91,7 +92,7 @@ suppressPackageStartupMessages({
 chromosomes <- paste0("chr", c(1:22, "X", "Y"))
 
 # Choose one bundled example read-depth matrix from list_example_data().
-read_depth_file <- "Read_depth_matrix_chr1_p_2_5pct_Rep1.rds"
+read_depth_file <- "Read_depth_matrix_chr1_50mb_2_5pct_Rep1.rds"
 read_depth_chrom_file <- sub("\\.rds$", "_chrom.rds", read_depth_file)
 spikein_cells_file <- "read_depth_spikein_cells_2mb_ALL.rds"
 
