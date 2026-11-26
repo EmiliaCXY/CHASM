@@ -17,6 +17,35 @@ Conventions:
 
 ---
 
+## 2026-11-26 (2): faster long-to-wide pivot in `wavelet_transform()`
+
+### Changed
+- `R/wavelet.R`, `wavelet_transform()`: the long → wide pivot (cells × bins) now uses `data.table::dcast()` instead of
+  `stats::reshape(direction = "wide")`. It comes from `analysis_claude/Tools/chasm_patches.R` (`wavelet_transform_fast`),
+  with one correction:
+  - `dcast` sorts cells by name, while `reshape` keeps them in order of first appearance. The cell order is the column order of
+    the wavelet matrix and changes the randomized robust PCA, so the patch as written would **not** have reproduced the calls.
+  - Rows are therefore put back in first-appearance order (`match(unique(barcode), ...)`). Column names stay
+    `read_depth_sqrt_centered.<bin>`, and the bin reordering by chromosome / arm / position is unchanged.
+- `DESCRIPTION`: `data.table` added to Imports.
+- The patch's other part, `robust_pca_fast()` (rsvd `maxiter` 20 instead of 50), is **not** included: it changes the output.
+
+### Added
+- `tests/testthat/test-wavelet-dcast.R`: on 120 cells with the long table shuffled, the new pivot gives the same cell order as
+  the former reshape code, and the inverse wavelet transform reproduces the reshape matrix (tolerance 1e-12).
+
+### Test result (1-CPU Slurm job)
+- Regression test passes: the default-pipeline calls are identical to the 7af5239 reference. The new dcast test passes.
+  The same 5 pre-existing failures remain.
+- Speed (pivot step; old `reshape` alone vs the whole new `wavelet_transform()`), 1 CPU:
+
+  | Cells | Old | New |
+  |---|---|---|
+  | 2,000 | 44.1 s | 1.2 s |
+  | 10,000 | 234.7 s | 5.2 s |
+
+  About 40× faster, and the cell order is identical at both sizes.
+
 ## 2026-11-26
 
 ### Added

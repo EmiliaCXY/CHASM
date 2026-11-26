@@ -188,15 +188,25 @@ wavelet_transform <- function(chrom_depth_per_cell, bins, chromosomes = paste0("
 
   message("Normalizing read depth and centering by expected bin factor...")
 
-  centered_depth_long <- chrom_depth_per_cell[, c("barcode", "bin", "read_depth_sqrt_centered")]
-  centered_depth_wide <- stats::reshape(
-    centered_depth_long,
-    idvar = "barcode",
-    timevar = "bin",
-    direction = "wide"
+  # Long -> wide (cells x bins) with data.table::dcast (much faster than stats::reshape on large matrices).
+  # The result must be identical to the former stats::reshape(direction = "wide") output:
+  #   - rows (cells) in order of first appearance in the long table (reshape's order; dcast sorts them),
+  #     because the cell order changes the randomized robust PCA downstream;
+  #   - columns named "read_depth_sqrt_centered.<bin>" (bins are reordered by position below).
+  centered_depth_long <- data.table::as.data.table(
+    as.data.frame(chrom_depth_per_cell)[, c("barcode", "bin", "read_depth_sqrt_centered")]
   )
+  cell_order <- unique(centered_depth_long$barcode)
+  centered_depth_wide <- data.table::dcast(
+    centered_depth_long,
+    barcode ~ bin,
+    value.var = "read_depth_sqrt_centered"
+  )
+  centered_depth_wide <- as.data.frame(centered_depth_wide)
+  centered_depth_wide <- centered_depth_wide[match(cell_order, centered_depth_wide$barcode), , drop = FALSE]
   rownames(centered_depth_wide) <- centered_depth_wide$barcode
-  centered_depth_wide <- subset(centered_depth_wide, select = -barcode)
+  centered_depth_wide <- centered_depth_wide[, setdiff(colnames(centered_depth_wide), "barcode"), drop = FALSE]
+  colnames(centered_depth_wide) <- paste0("read_depth_sqrt_centered.", colnames(centered_depth_wide))
   centered_depth_matrix <- as.matrix(centered_depth_wide)
 
   message("Reordering bins by chromosome and position...")
