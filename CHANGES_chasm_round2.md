@@ -17,6 +17,57 @@ Conventions:
 
 ---
 
+## 2026-11-26 (3): V2 back-transform option in `assign_cn_state()`
+
+### Added
+- `R/cn_assign.R`
+  - `assign_cn_state(..., backtransform = c("V0", "V2"))`, default `"V0"` (unchanged output).
+  - New internal `backtransform_expected_v2()`:
+    `e_V2 = lib × ((√(e_V0/lib) − β̂_med + β̂_mean)² + Var_b)`.
+    - β̂_med, β̂_mean and Var_b are the per-bin median, mean and population variance of `beta_i_c` over the reference cells
+      (library ≥ 75th percentile), the same cells that define `beta_i_hat`.
+    - **Why:** V0 squares a median of square-root shares, which underestimates sparse bins and shallow cells, since E[x] = (E√x)² + Var(√x).
+      That inflates observed/expected and gives false gains, e.g. on chrX and small autosomes.
+- `tests/testthat/test-backtransform-v2.R`:
+  1. With identical segmentation, V2 expected counts, raw CN and adjusted CN equal an independent re-implementation of the
+     revision formula (`call_round()`; tolerance 1e-10).
+  2. On chromosomes the example spike-in does not touch, the median raw CN of V2 is closer to 2 than V0's.
+- `tests/testthat/helper-pipeline.R`: `run_reference_pipeline()` gains `backtransform` and `compact` arguments.
+  The default path is unchanged.
+
+### Test result (1-CPU Slurm job)
+- The V2 tests pass (7 expectations). The regression test still passes, so the default calls are identical to 7af5239.
+  The same 5 pre-existing failures remain.
+
+### Evaluation: does V2 behave better than V0? (`revision_claude/Scripts/task8_chasm_package/01_eval_v2_package.R`)
+- **Set-up:** this branch's package code was applied to the saved CHASM runs of 160 spike-in settings, Rep1:
+  - breast 5/10/20/50 Mb and chr1p, kidney 5/10/20 Mb;
+  - CN ±1/±2;
+  - 1/5/10/15/20% prevalence.
+
+  Robust PCA and segmentation are reused, so only CN assignment differs. Package V0 reproduces the saved calls in all 160 settings (100%).
+- Medians over settings, V0 → V2:
+
+  | | Breast, before NB merge | Breast, final calls | Kidney, before NB merge | Kidney, final calls |
+  |---|---|---|---|---|
+  | Bin FPR | 9.9% → 1.4% | 0.45% → 0.34% | 1.26% → 0.65% | 0.50% → 0.48% |
+  | Normal cells with any call | 84% → 42% | 25.6% → 25.3% | 39% → 31% | 29.7% → 28.9% |
+  | Normal cells with > 5% of genome called | 74% → 13% | 2.4% → 1.2% | 12.5% → 4.5% | 2.0% → 1.9% |
+  | Gains on chrX/13/18/21 per normal cell | 1.26 → 0.22 | 0.058 → 0.045 | 0.21 → 0.08 | 0.057 → 0.041 |
+  | Carriers detected | 0.425 → 0.417 | 0.407 → 0.412 | 0.204 → 0.198 | 0.204 → 0.198 |
+
+- **Bias** (median raw CN of normal cells' single-segment chromosomes, V0 → V2):
+  - breast: 2.18 → 2.07 overall, chrX 2.66 → 2.07;
+  - kidney: 2.08 → 2.02 overall, chrX 2.25 → 2.07.
+- **Final calls, all 160 settings:**
+  - V2 lowers the bin FPR in 160 of 160 settings, and lowers the share of normal cells with > 5% of the genome called in 144.
+  - Detection is within ±0.02 in 143. It is lower in 13, all of them gains: worst kidney 20 Mb +2 20% 0.57 → 0.47 and breast chr1p +1 20% 0.28 → 0.20.
+    It is higher in 4, all of them one-copy losses: e.g. breast chr1p −1 20% 0.51 → 0.59.
+- **Trade-off:** false losses on sparse chromosomes rise slightly (final, median +0.011 per normal cell), because V2 over-corrects shallow cells
+  (the depth dependence noted in the revision).
+- **Verdict:** V2 removes most of V0's sparse-bin gain bias and cuts genome-wide false calls, at a small cost in detection for
+  high-prevalence gains.
+
 ## 2026-11-26 (2): faster long-to-wide pivot in `wavelet_transform()`
 
 ### Changed

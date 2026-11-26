@@ -218,6 +218,44 @@ construct_cn_calls_by_segment_type <- function(counts_with_segments) {
   rbind(cn_calls_single_segment, cn_calls_multi_segment)
 }
 
+#' V2 back-transform of expected counts
+#'
+#' The default (V0) expected count of a bin is \eqn{lib \times (L + \hat\beta)^2}, the square of a
+#' background built around the per-bin \emph{median} of square-root shares. Because
+#' \eqn{E[x] = (E\sqrt{x})^2 + Var(\sqrt{x})} and the median of \eqn{\sqrt{x}} is below its mean for
+#' sparse counts, V0 underestimates the expected count on sparse bins (and in shallow cells), which
+#' inflates observed/expected and produces false gains (e.g. on chrX and small autosomes).
+#' V2 replaces the median by the mean and adds the variance:
+#' \deqn{e_{V2} = lib \times \left[\left(\sqrt{e_{V0}/lib} - \hat\beta_{med} + \hat\beta_{mean}\right)^2 + Var_b\right]}
+#' where \eqn{\hat\beta_{med}}, \eqn{\hat\beta_{mean}} and \eqn{Var_b} are the per-bin median, mean and
+#' (population) variance of the square-root share \code{beta_i_c} over reference cells, the cells with
+#' library size at or above the 75th percentile (the same cells that define \code{beta_i_hat}).
+#'
+#' @param expected_count_matrix Data frame of V0 expected counts (cells in rows, \code{bin_names} columns,
+#'   plus \code{barcode}), as returned by \code{construct_count_matrix()}.
+#' @param chrom_depth_per_cell Long-format table from [normalize_depth()].
+#' @param lib_size Data frame with \code{barcode} and \code{lib_size}.
+#' @param bin_names Bins (columns) to transform.
+#'
+#' @return \code{expected_count_matrix} with V2 expected counts.
+#' @keywords internal
+backtransform_expected_v2 <- function(expected_count_matrix, chrom_depth_per_cell, lib_size, bin_names) {
+  cells <- unique(as.data.frame(chrom_depth_per_cell)[, c("barcode", "lib_size")])
+  ref_cells <- cells$barcode[cells$lib_size >= stats::quantile(cells$lib_size, probs = 0.75, na.rm = TRUE)]
+  ref <- as.data.frame(chrom_depth_per_cell)
+  ref <- ref[ref$barcode %in% ref_cells, c("bin", "beta_i_c")]
+  beta_med <- tapply(ref$beta_i_c, ref$bin, stats::median, na.rm = TRUE)
+  beta_mean <- tapply(ref$beta_i_c, ref$bin, mean, na.rm = TRUE)
+  var_b <- tapply(ref$beta_i_c, ref$bin, function(v) mean((v - mean(v, na.rm = TRUE))^2, na.rm = TRUE))
+
+  lib <- lib_size$lib_size[match(expected_count_matrix$barcode, lib_size$barcode)]
+  for (b in bin_names) {
+    e0 <- expected_count_matrix[[b]]
+    expected_count_matrix[[b]] <- lib * ((sqrt(e0 / lib) - beta_med[[b]] + beta_mean[[b]])^2 + var_b[[b]])
+  }
+  expected_count_matrix
+}
+
 #' Assign segment-level copy-number states from observed and expected depth
 #'
 #' Reconstructs observed and expected read counts, links them to segmentation
@@ -227,9 +265,14 @@ construct_cn_calls_by_segment_type <- function(counts_with_segments) {
 #'   [normalize_depth()].
 #' @param svd_normalized_depth Recentered expected depth matrix in bin space.
 #' @param segment_table Segmentation output returned by [segment_residuals()].
+#' @param backtransform How expected counts are computed from the background:
+#'   \code{"V0"} (default, the original CHASM rule \eqn{lib \times (L + \hat\beta)^2}) or
+#'   \code{"V2"} (mean- and variance-corrected; see \code{backtransform_expected_v2()}).
+#'   V2 removes the upward copy-number bias on sparse bins and in shallow cells.
 #'
 #' @return A data frame of segment-level copy-number calls.
-assign_cn_state <- function(chrom_depth_per_cell, svd_normalized_depth, segment_table) {
+assign_cn_state <- function(chrom_depth_per_cell, svd_normalized_depth, segment_table, backtransform = c("V0", "V2")) {
+  backtransform <- match.arg(backtransform)
   bin_info <- data.frame(bin = colnames(svd_normalized_depth), stringsAsFactors = FALSE)
   bin_info$bin <- gsub("read_depth_sqrt_centered\\.", "", bin_info$bin)
   colnames(svd_normalized_depth) <- bin_info$bin
@@ -256,6 +299,9 @@ assign_cn_state <- function(chrom_depth_per_cell, svd_normalized_depth, segment_
     dplyr::select(barcode, lib_size) %>%
     dplyr::distinct()
   expected_count_matrix <- construct_count_matrix(svd_normalized_depth, lib_size, bin_names)
+  if (backtransform == "V2") {
+    expected_count_matrix <- backtransform_expected_v2(expected_count_matrix, chrom_depth_per_cell, lib_size, bin_names)
+  }
 
   observed_count_matrix <- construct_count_matrix(observed_depth_matrix, lib_size, bin_names)
 
