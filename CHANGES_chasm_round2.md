@@ -17,6 +17,59 @@ Conventions:
 
 ---
 
+## 2026-11-27: second round (`chasm_second_round()`) and seeding
+
+### Added
+- `R/second_round.R`
+  - `find_candidates()`: runs of bins with ≥ `min_cells` (3) same-direction sub-chromosomal calls, trimmed to ≥ 50% of the run's peak,
+    ≥ 2 bins. Returns the seeds and the median CN of each candidate.
+  - `support_candidates()`: binomial seed rule, `seeds ≥ qbinom(1 − fwer/#candidates, n, median seeds / n) + 1`, plus the optional
+    overlap fix (`drop_opposite_artifacts = TRUE`). The overlap fix is still to be revisited.
+  - Internal `hybrid_background()`:
+    1. masked SVD (rank 10, capped at half the bins outside the padded candidates) on bins outside the candidates padded by ±2 bins;
+    2. per candidate bin, regression on confident negatives (optionally also positives);
+    3. per-cell shift of robust PCA's background over supported candidates (widest first, narrowest wins).
+  - `chasm_second_round(chrom_depth_per_cell, wavelet, rpca, nb_calls, ...)`: round 1 → strict round → candidates and support →
+    hybrid background → round 2, with 2 iterations. Returns `final` (round 2 at α 0.001, V2), `round1`, `strict`, `candidates` and `info`.
+    - **Defaults** (user's decision, 2026-11-27): round 1 at α 0.005 with V2; negatives = cells with no round-1 or strict call in the
+      candidate's window (`negatives = "any"`); no positives; strict segmentation (α 0.001, V2) for round 2.
+    - **Benchmark configuration:** reproducible with `round1_calls = <saved calls>`, `round1_backtransform = "V0"`,
+      `use_positives = TRUE`. Before the internal seeding below, this reproduced the revision's grid run exactly
+      (breast 20 Mb −1 10%: 6,528 of 6,528 calls). With per-step seeds the random-number sequence differs, so it now agrees up to CBS
+      randomness.
+- **Seeding**
+  - `robust_pca(..., seed = NULL)`: optional seed. The default keeps the original behaviour.
+  - `chasm_second_round(seed = 1234)`: every segmentation and every masked SVD sets its own seed derived from `seed`. Results therefore
+    don't depend on step order or on the session's random state.
+  - **Why:** recomputing round 1 did not reproduce the saved breast runs, because those were made without a seed before robust PCA.
+    A seeded kidney run reproduces 100% (2,828,428 cell × bins). CBS also draws random numbers, so computing round 1 inside the function
+    shifted the random state for later segmentations.
+- `NAMESPACE`: exports `chasm_second_round`, `find_candidates`, `support_candidates`.
+- `R/globals.R`: data.table column names, and `.datatable.aware <- TRUE`.
+- `tests/testthat/test-second-round.R` (300-cell example, fresh R process):
+  - the output has the documented structure;
+  - the same call twice gives identical final calls;
+  - supplying round 1 instead of computing it gives identical final and strict calls.
+
+### Evaluation (`revision_claude/Scripts/task8_chasm_package/`, before the per-step seeding)
+- **12 settings** (breast 10/20/50 Mb and chr1p, kidney 10/20 Mb), median carriers detected / normal cells with any call:
+
+  | Configuration | Detected | Normal cells with any call |
+  |---|---|---|
+  | CHASM | 0.278 | 27.8% |
+  | Strict CHASM | 0.174 | 10.6% |
+  | Benchmark | 0.646 | 12.4% |
+  | Benchmark without positives | 0.653 | 12.2% |
+  | Round 1 with V2 | 0.617 | 13.0% |
+  | Negatives from strict calls only | 0.632 | 12.5% |
+
+- **Round 1 with V2 vs V0** (3 settings): most of the difference came from saved vs recomputed round 1. V2 itself cost about 0 in 2 of 3
+  settings, and 0.045 for breast 50 Mb −1 20%.
+
+### Test result (1-CPU Slurm job)
+- All new tests pass, the second-round test with 7 expectations. The regression test still passes, so the default pipeline is identical
+  to 7af5239. The same 5 pre-existing failures remain.
+
 ## 2026-11-26 (3): V2 back-transform option in `assign_cn_state()`
 
 ### Added

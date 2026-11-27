@@ -262,12 +262,16 @@ wavelet_transform <- function(chrom_depth_per_cell, bins, chromosomes = paste0("
 #' @param mat.wavelet.transform Numeric matrix returned by
 #'   [wavelet_transform()].
 #'
+#' @param seed Optional integer seed set before the randomized robust PCA (\code{rsvd::rrpca}). \code{NULL} (default) uses the
+#'   current random state, as before. Set it for reproducible results.
 #' @return A list with the low-rank expected component (`Expected_Normal`) and
 #'   the sparse residual component (`Sparse_Signal`).
-robust_pca <- function(mat.wavelet.transform) {
+robust_pca <- function(mat.wavelet.transform, seed = NULL) {
   if (!requireNamespace("rsvd", quietly = TRUE)) {
     stop("robust_pca: package 'rsvd' must be installed to run robust PCA.", call. = FALSE)
   }
+  # rsvd::rrpca is randomized: without a seed, results differ between runs (default NULL keeps the original behaviour)
+  if (!is.null(seed)) set.seed(seed)
 
   transformed_matrix <- mat.wavelet.transform
   lambda <- 1 / sqrt(max(nrow(transformed_matrix), ncol(transformed_matrix)))

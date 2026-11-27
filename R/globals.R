@@ -25,3 +25,7 @@ utils::globalVariables(c(
   "total_in_group",
   "weight"
 ))
+
+# data.table non-standard evaluation in R/second_round.R
+utils::globalVariables(c("chrom", "variable", "segment_id", "cn", "ID", "nseg", "dir", "n", "i.n", "hit", "run"))
+.datatable.aware <- TRUE
